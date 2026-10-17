@@ -374,6 +374,7 @@ struct ProjectionLoadMetrics {
 pub(crate) struct ProjectionWriteOutcome {
     pub(crate) timings: ProjectionWriteTimings,
     pub(crate) objects_changed: bool,
+    pub(crate) objects_removed: bool,
     pub(crate) folders_changed: bool,
     pub(crate) touched_object_ids: HashSet<String>,
     pub(crate) db_object_rows_loaded: usize,
@@ -516,6 +517,7 @@ pub(crate) async fn reconcile_projection_in_tx(
     Ok(ProjectionWriteOutcome {
         timings,
         objects_changed: state.objects_changed,
+        objects_removed: !state.deleted_object_keys.is_empty(),
         folders_changed: state.folders_changed,
         touched_object_ids: state.touched_object_ids,
         db_object_rows_loaded: load_metrics.object_rows,

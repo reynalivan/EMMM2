@@ -21,7 +21,7 @@ pub async fn get_mod_thumbnail(
     use crate::platform::images::thumbnail_cache::ThumbnailCache;
 
     let folder = validate_path(&config, &game_id, &folder_path)?;
-    ThumbnailCache::resolve(&game_id, &folder.to_string_lossy()).await
+    ThumbnailCache::resolve(&folder.to_string_lossy()).await
 }
 
 /// Delete the thumbnail file for a mod folder (if found) and invalidate cache.

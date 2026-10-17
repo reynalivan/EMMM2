@@ -202,6 +202,111 @@ fn nested_source_invalidation_cannot_republish_a_hidden_fallback_thumbnail() {
     assert!(lock(&cache).pending_resolutions.is_empty());
 }
 
+#[tokio::test]
+async fn completed_nested_source_deletion_invalidates_the_root_resolution() {
+    let temp = TempDir::new().unwrap();
+    let folder = temp.path().join("Mod");
+    let nested = folder.join("Images");
+    fs::create_dir_all(&nested).unwrap();
+    let source = nested.join("preview.png");
+    create_dummy_image(&source);
+    let cache = isolated_cache(&temp.path().join("app_data"));
+    let resolved = ThumbnailCache::resolve_with_cache(cache.clone(), &folder.to_string_lossy())
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(Path::new(&resolved).exists());
+
+    fs::remove_file(&source).unwrap();
+    ThumbnailCache::invalidate_with(&cache, &source);
+
+    assert!(
+        ThumbnailCache::resolve_with_cache(cache, &folder.to_string_lossy())
+            .await
+            .unwrap()
+            .is_none(),
+        "a completed root entry must not serve the deleted nested fallback"
+    );
+}
+
+#[tokio::test]
+async fn completed_nested_source_invalidation_preserves_unrelated_root_entries() {
+    let temp = TempDir::new().unwrap();
+    let folder = temp.path().join("Mod");
+    let other = temp.path().join("Mod2");
+    fs::create_dir_all(folder.join("Images")).unwrap();
+    fs::create_dir(&other).unwrap();
+    create_dummy_image(&folder.join("Images/preview.png"));
+    create_dummy_image(&other.join("preview.png"));
+    let cache = isolated_cache(&temp.path().join("app_data"));
+    for root in [&folder, &other] {
+        ThumbnailCache::resolve_with_cache(cache.clone(), &root.to_string_lossy())
+            .await
+            .unwrap()
+            .unwrap();
+    }
+
+    ThumbnailCache::invalidate_folder_with(&cache, &folder.join("Images").to_string_lossy());
+
+    assert!(
+        ThumbnailCache::folder_l1_path(&cache, &ThumbnailCache::identity_key(&other)).is_some()
+    );
+    assert!(
+        ThumbnailCache::folder_l1_path(&cache, &ThumbnailCache::identity_key(&folder)).is_none()
+    );
+}
+
+#[tokio::test]
+async fn completed_nested_source_deletion_after_toggle_invalidates_physical_root() {
+    let temp = TempDir::new().unwrap();
+    let folder = temp.path().join("Mod");
+    fs::create_dir_all(folder.join("Images")).unwrap();
+    create_dummy_image(&folder.join("Images/preview.png"));
+    let cache = isolated_cache(&temp.path().join("app_data"));
+    ThumbnailCache::resolve_with_cache(cache.clone(), &folder.to_string_lossy())
+        .await
+        .unwrap()
+        .unwrap();
+    let disabled = temp.path().join("DISABLED Mod");
+    fs::rename(&folder, &disabled).unwrap();
+    let source = disabled.join("Images/preview.png");
+    fs::remove_file(&source).unwrap();
+
+    ThumbnailCache::invalidate_folder_with(&cache, &source.parent().unwrap().to_string_lossy());
+
+    assert!(
+        ThumbnailCache::resolve_with_cache(cache, &disabled.to_string_lossy())
+            .await
+            .unwrap()
+            .is_none()
+    );
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn completed_nested_source_deletion_through_junction_invalidates_canonical_root() {
+    let temp = TempDir::new().unwrap();
+    let folder = temp.path().join("Mod");
+    fs::create_dir_all(folder.join("Images")).unwrap();
+    create_dummy_image(&folder.join("Images/preview.png"));
+    let alias = temp.path().join("Alias");
+    create_fixture_junction(&alias, &folder);
+    let cache = isolated_cache(&temp.path().join("app_data"));
+    ThumbnailCache::resolve_with_cache(cache.clone(), &folder.to_string_lossy())
+        .await
+        .unwrap()
+        .unwrap();
+    fs::remove_dir_all(folder.join("Images")).unwrap();
+
+    ThumbnailCache::invalidate_folder_with(&cache, &alias.join("Images").to_string_lossy());
+
+    let resolved = ThumbnailCache::resolve_with_cache(cache, &folder.to_string_lossy())
+        .await
+        .unwrap();
+    fs::remove_dir(&alias).unwrap();
+    assert!(resolved.is_none());
+}
+
 #[cfg(windows)]
 #[test]
 fn junction_alias_resolution_observes_canonical_nested_source_invalidation() {

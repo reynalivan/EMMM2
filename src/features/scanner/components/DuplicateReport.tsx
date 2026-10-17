@@ -9,7 +9,10 @@ import { forwardRef, useCallback, useEffect, useImperativeHandle, useState } fro
 import { AlertCircle, Loader2 } from 'lucide-react';
 import { useDedupReport, useResolveDuplicates } from '../hooks/useDedup';
 import type { DuplicateSelection, ResolutionRequest } from '@/entities/workspace';
-import { buildResolutionRequests } from '../utils/resolutionRequests';
+import {
+  buildResolutionRequests,
+  DuplicateResolutionConflictError,
+} from '../utils/resolutionRequests';
 import DuplicateTable from './DuplicateTable';
 import ResolutionModal from './ResolutionModal';
 import { toast } from '@/shared/ui/toast';
@@ -69,8 +72,18 @@ const DuplicateReport = forwardRef<DuplicateReportHandle, Props>(function Duplic
       return;
     }
 
+    try {
+      if (!report || buildResolutionRequests(selections, report.groups).length === 0) {
+        toast.warning(t('scanner:report.no_actions_selected'));
+        return;
+      }
+    } catch (error) {
+      if (!(error instanceof DuplicateResolutionConflictError)) throw error;
+      toast.warning(t('scanner:report.conflicting_choices'));
+      return;
+    }
     setShowModal(true);
-  }, [selections.size, t]);
+  }, [report, selections, t]);
 
   useImperativeHandle(ref, () => ({ requestApply: handleApplyAll }), [handleApplyAll]);
 
@@ -84,7 +97,14 @@ const DuplicateReport = forwardRef<DuplicateReportHandle, Props>(function Duplic
   const handleConfirm = () => {
     if (!report) return;
 
-    const requests = convertSelectionsToRequests();
+    let requests: ResolutionRequest[];
+    try {
+      requests = convertSelectionsToRequests();
+    } catch (error) {
+      if (!(error instanceof DuplicateResolutionConflictError)) throw error;
+      toast.warning(t('scanner:report.conflicting_choices'));
+      return;
+    }
     if (requests.length === 0 || isPending) {
       if (!isPending) toast.warning(t('scanner:report.no_actions_selected'));
       return;

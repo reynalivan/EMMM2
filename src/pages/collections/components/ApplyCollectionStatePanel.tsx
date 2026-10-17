@@ -42,32 +42,25 @@ export function StatePanel({
 }: StatePanelProps) {
   const [treeScrollElement, setTreeScrollElement] = useState<HTMLDivElement | null>(null);
   return (
-    <div className={`flex-1 flex flex-col max-h-full overflow-hidden ${containerClass}`}>
-      <div className="p-4 bg-base-300/30 border-b border-base-content/5 shrink-0">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <div className="text-[11px] uppercase tracking-[0.18em] text-base-content/45">
-              {heading}
-            </div>
-            <div className={`mt-1 text-lg font-semibold ${titleClass}`}>{title}</div>
-          </div>
-          <SummaryStat
-            label={t('collections:apply.summary.mods', 'Active Roots')}
-            value={summary.active_root_count}
-          />
+    <div className={`flex-1 min-w-0 flex flex-col max-h-full overflow-hidden ${containerClass}`}>
+      <div className="px-4 py-3 bg-base-300/30 border-b border-base-content/8 shrink-0">
+        <div className="text-[10px] uppercase tracking-[0.14em] text-base-content/45">
+          {heading}
+        </div>
+        <div className={`mt-0.5 text-sm font-semibold truncate ${titleClass}`}>{title}</div>
+        <div className="mt-1 text-xs text-base-content/55">
+          {summary.active_root_count} {t('collections:apply.summary.mods', 'Active Roots')}
+          <span className="mx-2 text-base-content/25" aria-hidden="true">
+            ·
+          </span>
+          {summary.enabled_object_count}/{summary.object_count}{' '}
+          {t('collections:apply.summary.objects_on', 'Objects On')}
         </div>
       </div>
-      <div className="p-4 grid grid-cols-2 gap-3 border-b border-base-content/5 bg-base-100/30">
-        <SummaryStat
-          label={t('collections:apply.summary.objects_on', 'Objects On')}
-          value={summary.enabled_object_count}
-        />
-        <SummaryStat
-          label={t('collections:apply.summary.objects', 'Objects')}
-          value={summary.object_count}
-        />
-      </div>
-      <div ref={setTreeScrollElement} className="flex-1 overflow-y-auto custom-scrollbar p-4">
+      <div
+        ref={setTreeScrollElement}
+        className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-3"
+      >
         <CollectionTreeView
           nodes={nodes}
           colorClass={colorClass}

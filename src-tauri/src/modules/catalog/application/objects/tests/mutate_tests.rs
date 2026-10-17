@@ -1,6 +1,6 @@
 use crate::modules::catalog::application::objects::mutate::{
-    create_object_cmd_inner, delete_object, set_object_and_mods_category, toggle_pin_object,
-    update_object,
+    create_object_cmd_inner, prepare_object_delete, set_object_and_mods_category,
+    toggle_pin_object, update_object,
 };
 use crate::modules::catalog::domain::objects::{
     CreateObjectInput, CreateObjectThumbnail, UpdateObjectInput,
@@ -280,6 +280,125 @@ async fn generic_object_category_update_rejects_noncanonical_values() {
 
 async fn setup_test_db() -> sqlx::SqlitePool {
     crate::test_utils::init_test_db().await.pool
+}
+
+#[cfg(windows)]
+#[tokio::test]
+async fn object_create_accepts_junction_root_and_rejects_retargeting() {
+    use crate::modules::catalog::application::objects::mutate::prepare_object_create;
+    use std::os::windows::process::CommandExt;
+    let pool = setup_test_db().await;
+    let fixture = tempfile::tempdir().unwrap();
+    let physical = fixture.path().join("PhysicalMods");
+    let replacement = fixture.path().join("ReplacementMods");
+    let alias = fixture.path().join("ConfiguredMods");
+    std::fs::create_dir(&physical).unwrap();
+    std::fs::create_dir(&replacement).unwrap();
+    let link = |target: &std::path::Path| {
+        let output = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&alias)
+            .arg(target)
+            .creation_flags(windows_sys::Win32::System::Threading::CREATE_NO_WINDOW)
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "owned junction fixture must create"
+        );
+    };
+    link(&physical);
+    crate::test_utils::insert_test_game(
+        &pool,
+        &crate::test_utils::TestGameFixture {
+            id: "junction-create-game",
+            name: "Game",
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
+            path: "/game",
+            mods_path: Some(&alias.to_string_lossy()),
+        },
+    )
+    .await
+    .unwrap();
+    let input = CreateObjectInput {
+        game_id: "junction-create-game".to_string(),
+        name: "Object".to_string(),
+        folder_path: None,
+        object_type: "Other".to_string(),
+        sub_category: None,
+        status: None,
+        metadata: None,
+        thumbnail: None,
+        thumbnail_url: None,
+        hash_db: None,
+        custom_skins: None,
+    };
+
+    let prepared = prepare_object_create(&pool, &input)
+        .await
+        .expect("configured junction root remains supported");
+    prepared.prepare().unwrap();
+    prepared.promote().unwrap();
+    let pins = prepared.pin_target().unwrap();
+    assert!(physical.join("Object").is_dir());
+    assert!(alias.join("Object").is_dir());
+    super::super::mutate::create_object_cmd_inner_with_thumbnail(
+        &pool,
+        input.clone(),
+        Some(super::super::mutate::PreparedObjectThumbnail {
+            file_name: "preview_custom.png".to_string(),
+            bytes: b"owned thumbnail fixture".to_vec(),
+        }),
+        Some(&prepared),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        std::fs::read(physical.join("Object/preview_custom.png")).unwrap(),
+        b"owned thumbnail fixture"
+    );
+    std::fs::remove_file(physical.join("Object/preview_custom.png")).unwrap();
+    drop(pins);
+    prepared.rollback().unwrap();
+    assert!(!physical.join("Object").exists());
+
+    let prepared = prepare_object_create(&pool, &input).await.unwrap();
+    std::fs::remove_dir(&alias).unwrap();
+    link(&replacement);
+    assert!(
+        prepared.prepare().is_err(),
+        "retargeted configured alias must revoke original ownership"
+    );
+    assert!(!physical.join("Object").exists());
+    assert!(!replacement.join("Object").exists());
+    assert_eq!(std::fs::read_dir(&physical).unwrap().count(), 0);
+    assert_eq!(std::fs::read_dir(&replacement).unwrap().count(), 0);
+    std::fs::remove_dir(&alias).unwrap();
+    link(&physical);
+    let prepared = prepare_object_create(&pool, &input).await.unwrap();
+    prepared.prepare().unwrap();
+    prepared.promote().unwrap();
+    std::fs::remove_dir(&alias).unwrap();
+    link(&replacement);
+    assert!(
+        super::super::mutate::create_object_cmd_inner_with_thumbnail(
+            &pool,
+            input,
+            Some(super::super::mutate::PreparedObjectThumbnail {
+                file_name: "preview_custom.png".to_string(),
+                bytes: b"must not publish".to_vec(),
+            }),
+            Some(&prepared),
+        )
+        .await
+        .is_err()
+    );
+    assert_eq!(
+        std::fs::read_dir(physical.join("Object")).unwrap().count(),
+        0
+    );
+    assert_eq!(std::fs::read_dir(&replacement).unwrap().count(), 0);
+    std::fs::remove_dir(&alias).unwrap();
 }
 
 async fn reconcile_test_disk(pool: &sqlx::SqlitePool, mods_path: &std::path::Path) {
@@ -740,10 +859,6 @@ async fn test_delete_object_empty() {
     let mods_path = tmp.path().join("Mods");
     std::fs::create_dir(&mods_path).unwrap();
     let mods_path_string = mods_path.to_string_lossy().to_string();
-    let watcher_state =
-        crate::modules::workspace::application::scanner::watcher::WatcherState::default();
-    let op_lock = crate::platform::fs::operation_lock::OperationLock::new();
-    let op_guard = op_lock.acquire().await.unwrap();
 
     crate::test_utils::insert_test_game(
         &pool,
@@ -771,9 +886,10 @@ async fn test_delete_object_empty() {
     .await
     .unwrap();
 
-    delete_object(&pool, "o1", false, &watcher_state, &op_guard)
+    assert!(prepare_object_delete(&pool, "o1", false)
         .await
-        .unwrap();
+        .unwrap()
+        .is_none());
     reconcile_test_disk(&pool, &mods_path).await;
 
     let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE id = 'o1'")
@@ -790,10 +906,6 @@ async fn test_delete_object_cascade_mods() {
     let mods_path = tmp.path().join("Mods");
     std::fs::create_dir(&mods_path).unwrap();
     let mods_path_string = mods_path.to_string_lossy().to_string();
-    let watcher_state =
-        crate::modules::workspace::application::scanner::watcher::WatcherState::default();
-    let op_lock = crate::platform::fs::operation_lock::OperationLock::new();
-    let op_guard = op_lock.acquire().await.unwrap();
 
     crate::test_utils::insert_test_game(
         &pool,
@@ -856,9 +968,14 @@ async fn test_delete_object_cascade_mods() {
     .unwrap();
 
     // Deletion should cascade — remove mods + object
-    delete_object(&pool, "o1", true, &watcher_state, &op_guard)
+    assert!(matches!(
+        prepare_object_delete(&pool, "o1", false).await,
+        Err(crate::shared::errors::AppError::ObjectHasMods(2))
+    ));
+    assert!(prepare_object_delete(&pool, "o1", true)
         .await
-        .unwrap();
+        .unwrap()
+        .is_none());
     reconcile_test_disk(&pool, &mods_path).await;
 
     let obj_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE id = 'o1'")

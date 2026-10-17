@@ -398,11 +398,10 @@ pub async fn suggest_random_mods(
         } else {
             Path::new(&mods_root).join(stored_path)
         };
-        let thumbnail_path =
-            ThumbnailCache::resolve(&input.game_id, &absolute_path.to_string_lossy())
-                .await
-                .ok()
-                .flatten();
+        let thumbnail_path = ThumbnailCache::resolve(&absolute_path.to_string_lossy())
+            .await
+            .ok()
+            .flatten();
         proposals.push(RandomModProposal {
             active_mod_names:
                 crate::modules::library::adapters::sqlite::mods::get_effectively_enabled_mod_names(

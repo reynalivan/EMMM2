@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use crate::modules::library::application::mods::core_ops::standardize_prefix;
+#[cfg(test)]
 use crate::modules::workspace::domain::workspace::WorkspacePathRewrite;
 use crate::platform::fs::file_utils::{FilesystemIdentityProof, FilesystemNamespaceProof};
 use crate::platform::fs::rename::rename_no_replace;
@@ -51,6 +52,7 @@ pub struct RuntimeToggleBatchRequest {
     pub operations: Vec<RuntimeToggleOperation>,
 }
 
+#[cfg(test)]
 #[derive(Debug, Clone)]
 pub struct RuntimeToggleResult {
     pub enabled_count: usize,
@@ -114,6 +116,7 @@ impl RuntimeRenamePlan {
     pub fn expected_identity(&self) -> &str {
         &self.expected_identity
     }
+    #[cfg(test)]
     pub fn apply(&self) -> std::io::Result<()> {
         self.rename_checked(false)
     }
@@ -192,6 +195,8 @@ impl RuntimeRenamePlan {
             rename_no_replace(source, destination)
         }
     }
+
+    #[cfg(test)]
     pub fn rollback(&self) -> std::io::Result<()> {
         self.rename_checked(true)
     }
@@ -213,6 +218,7 @@ impl RuntimeRenamePlan {
             .await
     }
 
+    #[cfg(test)]
     pub(crate) async fn rollback_async(&self, budget: &mut RetryBudget) -> std::io::Result<()> {
         self.rename_async(true, budget).await
     }
@@ -235,6 +241,7 @@ pub(crate) fn classify_rename_failure_with_identity(
     }
 }
 
+#[cfg(test)]
 pub async fn toggle_mods_mixed(
     request: RuntimeToggleBatchRequest,
 ) -> Result<RuntimeToggleResult, RuntimeToggleFailure> {
@@ -342,6 +349,7 @@ pub fn plan_runtime_toggles(
     Ok(plans)
 }
 
+#[cfg(test)]
 fn empty_result() -> RuntimeToggleResult {
     RuntimeToggleResult {
         enabled_count: 0,
@@ -417,6 +425,7 @@ fn build_plan(
     )))
 }
 
+#[cfg(test)]
 async fn rollback_successes(plans: &[RuntimeRenamePlan], warnings: &mut Vec<String>) {
     let mut retry_budget = RetryBudget::default();
     for plan in plans.iter().rev() {

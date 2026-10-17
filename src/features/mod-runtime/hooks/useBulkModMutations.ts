@@ -1,20 +1,18 @@
 /**
  * useBulkModMutations — Multi-selection mutation hooks for mod folders.
  *
- * Bulk toggle, delete and favorite actions for explicit folder paths.
+ * Bulk toggle and favorite actions for explicit folder paths.
  */
 
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { commands } from '../../../shared/api/tauri/bindings';
 import { toast } from '@/shared/ui/toast';
-import { thumbnailKeys } from '@/entities/mod';
 import {
   cancelRuntimeDescriptorQueries,
   publishRuntimeDescriptor,
 } from '@/shared/lib/queryRefresh';
 import { applyRuntimeEffects } from '@/features/workspace-runtime/@x/mod-runtime';
 import {
-  buildQueryRemovalDescriptor,
   buildRuntimeMutationDescriptor,
   buildWorkspacePathRewritesDescriptor,
 } from '@/features/workspace-runtime/@x/mod-runtime';
@@ -35,10 +33,6 @@ import {
 } from '../../../shared/lib/hooks/bulkToastMessages';
 import { notifyCommittedMutationSyncWarning } from '../../../shared/lib/committedMutationWarning';
 import { useAppStore } from '@/app/store';
-
-function createBulkOperationId(kind: 'toggle' | 'delete'): string {
-  return `${kind}-${crypto.randomUUID()}`;
-}
 
 function isActiveGame(gameId: string): boolean {
   return useAppStore.getState().activeGameId === gameId;
@@ -61,7 +55,7 @@ export function useBulkToggle() {
         params.gameId,
         params.paths,
         params.enable,
-        createBulkOperationId('toggle'),
+        `toggle-${crypto.randomUUID()}`,
         nextWorkspaceIntentRevision(),
         null,
         params.recoveryIds ?? null,
@@ -122,64 +116,6 @@ export function useBulkToggle() {
     },
   });
 
-  return mutation;
-}
-
-/** Hook to bulk delete mods. */
-export function useBulkDelete() {
-  const queryClient = useQueryClient();
-
-  const mutation = useMutation({
-    // `gameId` names both the mods root the paths must sit inside and the
-    // game whose index rows get pruned; the backend refuses without it.
-    mutationFn: (params: { paths: string[]; gameId: string; recoveryIds?: string[] }) =>
-      commands.bulkDeleteMods(
-        params.gameId,
-        params.paths,
-        createBulkOperationId('delete'),
-        params.recoveryIds ?? null,
-      ),
-    onSuccess: async (result, variables) => {
-      if (!isActiveGame(variables.gameId)) {
-        return;
-      }
-      applyRuntimeEffects(
-        queryClient,
-        buildQueryRemovalDescriptor(
-          result.success.map((path) => thumbnailKeys.folder(path)),
-          [],
-        ),
-      );
-      await publishRuntimeDescriptor(
-        queryClient,
-        buildRuntimeMutationDescriptor(
-          ['workspaceStructure', 'workspaceRuntime', 'dashboardKeybindings'],
-          collectionReferenceImpactRefreshEvents(result.collection_impact),
-        ),
-        'active',
-      );
-      if (!isActiveGame(variables.gameId)) {
-        return;
-      }
-      if (result.success.length > 0) {
-        toast.success(formatBulkSuccessMessage(result.success, 'deleted'));
-      }
-      if (result.collection_impact) notifyCollectionReferenceImpact(result.collection_impact);
-      if (result.failures.length > 0) {
-        toast.error(formatBulkFailureMessage(result.failures, 'delete'));
-        openBulkFileInUseRetryDialog(result, variables, mutation.mutateAsync);
-      }
-      if (result.cancelled) {
-        toast.info(formatBulkCancelledMessage(result));
-      }
-      notifyCommittedMutationSyncWarning(result);
-    },
-    onError: (error, variables) => {
-      if (!isActiveGame(variables.gameId)) return;
-      if (openBulkFileLockErrorDialog(error, variables, mutation.mutateAsync)) return;
-      toast.error(formatAppError(error));
-    },
-  });
   return mutation;
 }
 

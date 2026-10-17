@@ -13,6 +13,7 @@ pub fn create_staging_directory(active: &Path) -> Result<PathBuf, AppError> {
     crate::platform::fs::atomic_file::create_staging_directory(active)
 }
 
+#[cfg(test)]
 pub fn replace_directory(staging: &Path, active: &Path) -> Result<(), AppError> {
     crate::platform::fs::atomic_file::replace_directory(staging, active)
 }

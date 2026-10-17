@@ -1,4 +1,4 @@
-> **[STATUS: OUTDATED]** Arsitektur di dokumen ini (commit_scan, ApprovedCandidate, BLAKE3) telah digantikan penuh oleh pipeline import_batch. Referensi ke terminologi lama tidak valid lagi.
+> **[STATUS: OUTDATED]** The architecture in this document (`commit_scan`, `ApprovedCandidate`, BLAKE3) has been fully replaced by the `import_batch` pipeline. References to the old terminology are no longer valid.
 
 # Epic 27: Sync Database
 

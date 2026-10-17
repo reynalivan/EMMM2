@@ -54,6 +54,40 @@ async fn reconcile_test_disk(pool: &SqlitePool, game_id: &str, mods_path: &std::
 }
 
 #[tokio::test]
+async fn missing_object_delete_fallback_never_adopts_late_folder() {
+    let (tmp, pool, game_id) = setup_test_db().await;
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "missing-object",
+            game_id: &game_id,
+            name: "Late",
+            folder_path: "Late",
+            object_type: "Other",
+        },
+    )
+    .await
+    .unwrap();
+    let prepared = crate::modules::catalog::application::objects::mutate::prepare_object_delete(
+        &pool,
+        "missing-object",
+        true,
+    )
+    .await
+    .unwrap();
+    assert!(prepared.is_none());
+    let late = tmp.path().join("Mods/Late");
+    fs::create_dir(&late).unwrap();
+    fs::write(late.join("user.txt"), "late user folder").unwrap();
+    reconcile_test_disk(&pool, &game_id, &tmp.path().join("Mods")).await;
+
+    assert_eq!(
+        fs::read_to_string(late.join("user.txt")).unwrap(),
+        "late user folder"
+    );
+}
+
+#[tokio::test]
 async fn test_get_objects_with_disabled_prefix() -> CommandResult<()> {
     let (tmp, pool, game_id) = setup_test_db().await;
     let mods_path = tmp.path().join("Mods");
@@ -249,10 +283,6 @@ async fn test_update_object_cmd() -> CommandResult<()> {
 async fn test_delete_object_fk_constraints() -> CommandResult<()> {
     let (_tmp, pool, game_id) = setup_test_db().await;
     let mods_path = _tmp.path().join("Mods");
-    let watcher_state =
-        crate::modules::workspace::application::scanner::watcher::WatcherState::default();
-    let op_lock = crate::platform::fs::operation_lock::OperationLock::new();
-    let op_guard = op_lock.acquire().await.unwrap();
 
     // Create an empty object
     let empty_obj_id = "empty_obj";
@@ -302,12 +332,10 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
     .unwrap();
 
     // Delete empty object (should succeed)
-    let res_empty = crate::modules::catalog::application::objects::mutate::delete_object(
+    let res_empty = crate::modules::catalog::application::objects::mutate::prepare_object_delete(
         &pool,
         empty_obj_id,
         false,
-        &watcher_state,
-        &op_guard,
     )
     .await;
     assert!(
@@ -315,13 +343,21 @@ async fn test_delete_object_fk_constraints() -> CommandResult<()> {
         "TC-10-07: Empty object should be deleted successfully"
     );
 
-    // Delete object with mods (should now cascade-delete mods and succeed)
-    let res_full = crate::modules::catalog::application::objects::mutate::delete_object(
+    assert!(matches!(
+        crate::modules::catalog::application::objects::mutate::prepare_object_delete(
+            &pool,
+            full_obj_id,
+            false
+        )
+        .await,
+        Err(AppError::ObjectHasMods(1))
+    ));
+
+    // Force permits reconciliation to remove the missing object and child rows.
+    let res_full = crate::modules::catalog::application::objects::mutate::prepare_object_delete(
         &pool,
         full_obj_id,
         true,
-        &watcher_state,
-        &op_guard,
     )
     .await;
     assert!(

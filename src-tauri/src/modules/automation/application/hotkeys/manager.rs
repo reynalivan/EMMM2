@@ -172,16 +172,6 @@ impl ShortcutRegistrationSink for TauriShortcutRegistrationSink<'_> {
 
 /// Build a map of (shortcut string, HotkeyAction) from the user config.
 fn build_registration(config: &HotkeyConfig) -> Result<Vec<(Shortcut, HotkeyAction)>, AppError> {
-    let mut configured = HashSet::new();
-    for action in HotkeyAction::ALL {
-        let shortcut = parse_os_shortcut(get_key_string(config, action))?;
-        if !configured.insert(shortcut.id()) {
-            return Err(AppError::Validation(
-                "Hotkey bindings must not use the same shortcut".to_string(),
-            ));
-        }
-    }
-
     let entries: Vec<(Shortcut, HotkeyAction)> = HotkeyAction::OS_ACTIONS
         .into_iter()
         .map(|action| Ok((parse_os_shortcut(get_key_string(config, action))?, action)))
@@ -290,9 +280,15 @@ pub struct HotkeyManager {
     release_waiters: Mutex<HashMap<u32, Arc<tokio::sync::Notify>>>,
 }
 
+impl Default for HotkeyManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl HotkeyManager {
     /// Create a new HotkeyManager.
-    pub fn new(_config: &HotkeyConfig) -> Self {
+    pub fn new() -> Self {
         Self {
             registration_lifecycle: Mutex::new(()),
             key_map: Mutex::new(HashMap::new()),

@@ -149,6 +149,24 @@ describe('DuplicateReport', () => {
     vi.clearAllMocks();
   });
 
+  it('blocks conflicting overlapping choices before confirmation', () => {
+    const nextGroup: DupScanGroup = {
+      ...mockGroup,
+      groupId: 'group-2',
+      members: [mockGroup.members[1], { ...mockGroup.members[0], folderPath: '/path/mod-c' }],
+    };
+    mockDedupReport({ data: { ...mockReport, groups: [mockGroup, nextGroup] }, isLoading: false });
+    const resolve = vi.fn();
+    mockResolveDuplicates({ mutate: resolve, isPending: false });
+    render(<DuplicateReport />);
+    fireEvent.click(screen.getByTestId('keep-a-group-1'));
+    fireEvent.click(screen.getByTestId('keep-a-group-2'));
+    fireEvent.click(screen.getByRole('button', { name: /apply/i }));
+    expect(toast.warning).toHaveBeenCalledWith(expect.stringMatching(/conflict/i));
+    expect(screen.getByTestId('resolution-modal')).not.toBeVisible();
+    expect(resolve).not.toHaveBeenCalled();
+  });
+
   describe('Loading state', () => {
     it('displays loader while fetching report', () => {
       mockDedupReport({

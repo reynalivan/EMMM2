@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useQueryClient } from '@tanstack/react-query';
 import { useActiveGame } from '@/entities/game';
 import { thumbnailKeys, type MoveStatus } from '@/entities/mod';
@@ -43,6 +43,7 @@ import {
   workspaceKeys,
 } from '@/features/workspace-runtime';
 import { notifyCommittedMutationSyncWarning } from '@/shared/lib/committedMutationWarning';
+import { publishQueryInvalidations } from '@/shared/lib/queryRefresh';
 import { useTranslation } from 'react-i18next';
 
 interface FolderGridBulkOptions {
@@ -337,6 +338,26 @@ export function useFolderGridBulk({
   const runningToggle = useRef<ToggleExecutionSnapshot | null>(null);
   const pendingToggle = useRef<ToggleExecutionSnapshot | null>(null);
   const completedToggleReceipt = useRef<CompletedToggleReceipt | null>(null);
+  const selectionOwnershipKey = useMemo(
+    () =>
+      JSON.stringify([
+        activeGameId,
+        explorerQuery,
+        selectionStable,
+        selection.mode,
+        selection.mode === 'explicit'
+          ? [...selection.paths]
+          : [selection.listingRevision, selection.totalMatching, ...selection.excludedPaths],
+      ]),
+    [activeGameId, explorerQuery, selection, selectionStable],
+  );
+  const selectionEpoch = useRef(0);
+  useLayoutEffect(() => {
+    selectionEpoch.current += 1;
+    return () => {
+      selectionEpoch.current += 1;
+    };
+  }, [selectionOwnershipKey]);
 
   useEffect(() => {
     const receipt = completedToggleReceipt.current;
@@ -659,6 +680,11 @@ export function useFolderGridBulk({
       if (!beginBulkMutation()) {
         return;
       }
+      const originSelectionEpoch = selectionEpoch.current;
+      const ownsSelection = () =>
+        activeGameId !== undefined &&
+        isActiveGame(activeGameId) &&
+        selectionEpoch.current === originSelectionEpoch;
       if (toggleSnapshot) {
         setFolderBulkPendingDesired(
           toggleSnapshot.execution.gameId,
@@ -670,11 +696,13 @@ export function useFolderGridBulk({
       }
       const handleError = async (error: unknown) => {
         if (isExplorerSnapshotExpired(error) && explorerQuery) {
-          clearGridSelection();
-          await queryClient.resetQueries({
-            queryKey: workspaceKeys.explorerPages(explorerQuery),
-            exact: true,
-          });
+          const originQuery = { queryKey: workspaceKeys.explorerPages(explorerQuery), exact: true };
+          if (ownsSelection()) {
+            clearGridSelection();
+            await queryClient.resetQueries(originQuery);
+          } else {
+            await publishQueryInvalidations(queryClient, [originQuery.queryKey], 'active');
+          }
         }
         toast.error(formatAppError(error));
       };
@@ -738,7 +766,12 @@ export function useFolderGridBulk({
         });
         return;
       }
-      void executeBulkAction(action).then(onSuccess).catch(handleError).finally(finishBulkMutation);
+      void executeBulkAction(action)
+        .then((result) => {
+          if (ownsSelection()) onSuccess?.(result);
+        })
+        .catch(handleError)
+        .finally(finishBulkMutation);
     },
     [
       activeGameId,

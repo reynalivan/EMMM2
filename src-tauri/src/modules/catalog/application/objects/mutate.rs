@@ -157,57 +157,63 @@ fn normalize_object_category(category: &str) -> Result<&str, AppError> {
 }
 
 pub struct PreparedObjectCreate {
-    stage: std::path::PathBuf,
-    target: std::path::PathBuf,
+    folder: crate::platform::fs::owned_folder_create::PreparedFolderCreate,
+    root_proof: crate::platform::fs::file_utils::FilesystemIdentityProof,
+    root: std::path::PathBuf,
 }
 
 impl PreparedObjectCreate {
     pub fn prepare(&self) -> Result<(), AppError> {
-        std::fs::create_dir(&self.stage).map_err(AppError::from)
+        self.root_proof.validate(&self.root)?;
+        self.ensure_target_is_available()?;
+        self.folder.prepare()
     }
 
     pub fn suppression_paths(&self) -> [std::path::PathBuf; 2] {
-        [self.stage.clone(), self.target.clone()]
+        [self.folder.stage.clone(), self.folder.target.clone()]
     }
 
     pub fn target_path(&self) -> &std::path::Path {
-        &self.target
+        &self.folder.target
     }
 
     pub fn stage_path(&self) -> &std::path::Path {
-        &self.stage
+        &self.folder.stage
     }
 
     pub fn ensure_target_is_available(&self) -> Result<(), AppError> {
-        if self.target.exists() {
+        if self.target_path().exists() {
             return Err(AppError::Validation(format!(
                 "Object folder already exists: {}",
-                self.target.display()
+                self.target_path().display()
             )));
         }
         Ok(())
     }
 
-    pub fn journal_step(&self) -> crate::modules::mutation::journal::PlannedStep {
-        crate::modules::mutation::journal::PlannedStep::rename(
-            0,
-            self.stage.clone(),
-            self.target.clone(),
-        )
+    pub fn journal_step(&self) -> Result<crate::modules::mutation::journal::PlannedStep, AppError> {
+        self.folder.journal_step()
+    }
+
+    pub fn source_epoch(&self) -> &str {
+        self.root_proof.identity()
+    }
+
+    pub(crate) fn pin_target(
+        &self,
+    ) -> Result<Vec<crate::platform::fs::rename::PinnedDirectory>, AppError> {
+        self.root_proof.validate(&self.root)?;
+        self.folder.pin_target()
     }
 
     pub fn promote(&self) -> Result<(), AppError> {
-        std::fs::rename(&self.stage, &self.target).map_err(AppError::from)
+        self.root_proof.validate(&self.root)?;
+        self.folder.promote()
     }
 
     pub fn rollback(&self) -> Result<(), AppError> {
-        if self.target.exists() && !self.stage.exists() {
-            std::fs::rename(&self.target, &self.stage)?;
-        }
-        if self.stage.exists() {
-            std::fs::remove_dir_all(&self.stage)?;
-        }
-        Ok(())
+        self.root_proof.validate(&self.root)?;
+        self.folder.rollback()
     }
 }
 
@@ -224,15 +230,35 @@ pub async fn prepare_object_create(
     )
     .await?
     .ok_or_else(|| AppError::NotFound("Game mods path not configured".to_string()))?;
-    let target = std::path::Path::new(&mods_path).join(folder_path);
+    let root = std::path::PathBuf::from(mods_path);
+    let root_proof = crate::platform::fs::file_utils::FilesystemIdentityProof::capture(&root)?;
+    let physical_root = root.canonicalize()?;
+    root_proof.validate(&physical_root)?;
+    let target = physical_root.join(folder_path);
     if target.exists() {
         return Err(AppError::Validation(format!(
             "Object folder already exists: {}",
             target.display()
         )));
     }
-    let stage = target.with_file_name(format!(".emmm-object-create-{}", Uuid::new_v4().simple()));
-    Ok(PreparedObjectCreate { stage, target })
+    let stage = target.with_file_name(format!(
+        "{}{}",
+        crate::modules::mutation::api::FOLDER_CREATE_STAGE_PREFIX,
+        Uuid::new_v4().simple()
+    ));
+    let mut folder =
+        crate::platform::fs::owned_folder_create::PreparedFolderCreate::new(stage, target)?;
+    folder.namespace_proof = Some(
+        crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+            &physical_root,
+            &[folder.stage.clone(), folder.target.clone()],
+        )?,
+    );
+    Ok(PreparedObjectCreate {
+        folder,
+        root_proof,
+        root,
+    })
 }
 
 #[derive(Debug, Clone)]
@@ -386,13 +412,14 @@ pub async fn create_object_cmd_inner(
             .map(|path| path.join("asset-pack"))
     });
     let prepared_thumbnail = prepare_object_thumbnail(&input, asset_root.as_deref()).await?;
-    create_object_cmd_inner_with_thumbnail(pool, input, prepared_thumbnail).await
+    create_object_cmd_inner_with_thumbnail(pool, input, prepared_thumbnail, None).await
 }
 
 pub async fn create_object_cmd_inner_with_thumbnail(
     pool: &sqlx::SqlitePool,
     input: CreateObjectInput,
     prepared_thumbnail: Option<PreparedObjectThumbnail>,
+    prepared: Option<&PreparedObjectCreate>,
 ) -> Result<String, AppError> {
     let object_type = normalize_object_category(&input.object_type)?;
     let id = Uuid::new_v4().to_string();
@@ -416,11 +443,25 @@ pub async fn create_object_cmd_inner_with_thumbnail(
     .await
     .map_err(|e| AppError::Db(e.to_string()))?
     .ok_or_else(|| AppError::NotFound("Game mods path not configured".to_string()))?;
-    let target_dir = std::path::Path::new(&mods_path).join(&folder_path);
-    if let Some((attempted_path, existing_path, base_name)) = find_new_path_identity_conflict(
-        std::path::Path::new(&mods_path),
-        std::path::Path::new(&folder_path),
-    ) {
+    let _target_pins = prepared.map(PreparedObjectCreate::pin_target).transpose()?;
+    let physical_root = match prepared {
+        Some(prepared) => {
+            prepared
+                .root_proof
+                .validate(std::path::Path::new(&mods_path))?;
+            let root = prepared.root.canonicalize()?;
+            prepared.root_proof.validate(&root)?;
+            root
+        }
+        None => std::path::PathBuf::from(&mods_path),
+    };
+    let target_dir = match prepared {
+        Some(prepared) => prepared.target_path().to_path_buf(),
+        None => physical_root.join(&folder_path),
+    };
+    if let Some((attempted_path, existing_path, base_name)) =
+        find_new_path_identity_conflict(&physical_root, std::path::Path::new(&folder_path))
+    {
         return Err(
             crate::modules::library::application::mods::core_ops::rename_conflict_error(
                 &attempted_path,
@@ -708,71 +749,122 @@ pub async fn set_object_and_mods_category(
     tx.commit().await?;
     Ok(child_updated as usize)
 }
-/// Delete an object on disk. The command's trailing full reconcile is the
-/// single writer that removes object/mod projections and records collection
-/// members as missing before those runtime rows disappear.
-pub async fn delete_object(
-    pool: &sqlx::SqlitePool,
-    id: &str,
-    force: bool,
-    _watcher_state: &crate::modules::workspace::application::scanner::watcher::WatcherState,
-    _op_guard: &crate::platform::fs::operation_lock::OpGuard,
-) -> Result<(), AppError> {
-    // 1. Fetch object from DB to get game_id and folder_path
-    let (obj_game_id, obj_folder_path) =
-        crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(pool, id)
-            .await
-            .map_err(|e| AppError::Db(e.to_string()))?
-            .ok_or_else(|| AppError::NotFound(format!("Object not found: {}", id)))?;
 
-    let mut target_dir_opt: Option<std::path::PathBuf> = None;
+#[cfg(test)]
+mod create_ownership_regressions {
+    use super::PreparedObjectCreate;
 
-    let mods_path =
-        crate::modules::games::adapters::sqlite::game::get_configured_mods_path(pool, &obj_game_id)
-            .await
-            .map_err(|e| AppError::Db(e.to_string()))?;
-
-    if let (Some(mods_path), Some(folder_path)) = (mods_path, obj_folder_path.as_ref()) {
-        target_dir_opt = Some(std::path::Path::new(&mods_path).join(folder_path));
-    }
-
-    // 1.5. Safety Guard: Check if the object has any mods
-    let count =
-        crate::modules::catalog::adapters::sqlite::object::get_mod_count_for_object(pool, id)
-            .await?;
-    if count > 0 && !force {
-        return Err(AppError::ObjectHasMods(count as i32));
-    }
-
-    // 2. Move folder to trash (if it exists on disk)
-    if let Some(target_dir) = target_dir_opt {
-        if target_dir.exists() {
-            log::info!("delete_object: moving {:?} to trash", target_dir);
-            crate::modules::library::application::mods::trash::move_to_trash(&target_dir).map_err(
-                |e| {
-                    log::error!("delete_object: trash move failed: {}", e);
-                    AppError::Io(format!(
-                        "Failed to move folder '{}' to trash. {}",
-                        target_dir.display(),
-                        e
-                    ))
-                },
-            )?;
-            log::info!("delete_object: successfully trashed {:?}", target_dir);
-        } else {
-            log::info!(
-                "delete_object: dir {:?} does not exist, skipping trash",
-                target_dir
-            );
-        }
-    } else {
-        log::warn!(
-            "delete_object: could not resolve folder path for object id={}",
-            id
+    fn prepared(root: &std::path::Path) -> PreparedObjectCreate {
+        let stage = root.join(format!(
+            "{}{}",
+            crate::modules::mutation::api::FOLDER_CREATE_STAGE_PREFIX,
+            uuid::Uuid::new_v4().simple()
+        ));
+        let target = root.join("Object");
+        let mut folder =
+            crate::platform::fs::owned_folder_create::PreparedFolderCreate::new(stage, target)
+                .unwrap();
+        folder.namespace_proof = Some(
+            crate::platform::fs::file_utils::FilesystemNamespaceProof::capture(
+                &root.canonicalize().unwrap(),
+                &[folder.stage.clone(), folder.target.clone()],
+            )
+            .unwrap(),
         );
+        PreparedObjectCreate {
+            folder,
+            root_proof: crate::platform::fs::file_utils::FilesystemIdentityProof::capture(root)
+                .unwrap(),
+            root: root.to_path_buf(),
+        }
     }
 
-    Ok(())
+    #[test]
+    fn object_create_rollback_preserves_new_content() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prepared = prepared(tmp.path());
+        prepared.prepare().unwrap();
+        prepared.promote().unwrap();
+        let added = prepared.target_path().join("user.txt");
+        std::fs::write(&added, "new user content").unwrap();
+
+        assert!(prepared.rollback().is_err());
+        assert_eq!(std::fs::read_to_string(added).unwrap(), "new user content");
+    }
+
+    #[test]
+    fn object_create_rollback_preserves_replacement() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prepared = prepared(tmp.path());
+        prepared.prepare().unwrap();
+        prepared.promote().unwrap();
+        std::fs::rename(prepared.target_path(), tmp.path().join("original-owned")).unwrap();
+        std::fs::create_dir(prepared.target_path()).unwrap();
+        let replacement = prepared.target_path().join("replacement.txt");
+        std::fs::write(&replacement, "replacement").unwrap();
+
+        assert!(prepared.rollback().is_err());
+        assert_eq!(std::fs::read_to_string(replacement).unwrap(), "replacement");
+    }
+
+    #[test]
+    fn object_create_rollback_removes_only_owned_empty_directory() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prepared = prepared(tmp.path());
+        prepared.prepare().unwrap();
+        prepared.promote().unwrap();
+        prepared.rollback().unwrap();
+        assert!(!prepared.target_path().exists());
+        assert!(!prepared.stage_path().exists());
+    }
+
+    #[test]
+    fn object_create_rejects_replaced_root_before_staging() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("Mods");
+        std::fs::create_dir(&root).unwrap();
+        let prepared = prepared(&root);
+        std::fs::rename(&root, tmp.path().join("OriginalMods")).unwrap();
+        std::fs::create_dir(&root).unwrap();
+        assert!(prepared.prepare().is_err());
+        assert!(!prepared.stage_path().exists());
+        assert!(!prepared.target_path().exists());
+    }
+
+    #[test]
+    fn object_create_failed_staging_never_adopts_existing_stage() {
+        let tmp = tempfile::tempdir().unwrap();
+        let prepared = prepared(tmp.path());
+        std::fs::create_dir(prepared.stage_path()).unwrap();
+        let foreign = prepared.stage_path().join("foreign.txt");
+        std::fs::write(&foreign, "foreign").unwrap();
+        assert!(prepared.prepare().is_err());
+        assert!(prepared.rollback().is_err());
+        assert_eq!(std::fs::read_to_string(foreign).unwrap(), "foreign");
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn object_create_pins_awaited_target_and_namespace_until_release() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("Mods");
+        std::fs::create_dir(&root).unwrap();
+        let prepared = prepared(&root);
+        prepared.prepare().unwrap();
+        prepared.promote().unwrap();
+        let pins = prepared.pin_target().unwrap();
+        assert!(std::fs::rename(prepared.target_path(), root.join("Detached")).is_err());
+        assert!(std::fs::rename(&root, tmp.path().join("DetachedMods")).is_err());
+        std::fs::write(
+            prepared.target_path().join("owned-thumbnail.png"),
+            b"thumbnail",
+        )
+        .unwrap();
+        std::fs::remove_file(prepared.target_path().join("owned-thumbnail.png")).unwrap();
+        drop(pins);
+        prepared.rollback().unwrap();
+        assert!(!prepared.target_path().exists());
+    }
 }
 
 #[cfg(test)]

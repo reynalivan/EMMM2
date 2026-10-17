@@ -1,5 +1,7 @@
 import { AlertTriangle, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
+import { useRef } from 'react';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
 
 interface DeleteCollectionModalProps {
   isOpen: boolean;
@@ -17,13 +19,24 @@ export function DeleteCollectionModal({
   onCancel,
 }: DeleteCollectionModalProps) {
   const { t } = useTranslation(['collections']);
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useDialogSync(dialogRef, isOpen);
+
+  const handleCancel = () => {
+    if (!isDeleting) onCancel();
+  };
 
   if (!isOpen) return null;
 
   return (
     <dialog
-      open
+      ref={dialogRef}
       className="modal modal-bottom sm:modal-middle bg-base-300/80 backdrop-blur-sm z-[100]"
+      onCancel={(event) => {
+        event.preventDefault();
+        handleCancel();
+      }}
+      onClose={handleCancel}
     >
       <div className="modal-box border border-error/20 bg-base-100 shadow-xl relative top-0 max-w-sm">
         <h3 className="font-bold text-lg text-error flex items-center gap-2 mb-4">

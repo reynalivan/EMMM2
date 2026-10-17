@@ -183,7 +183,7 @@ async fn rename_with_hook(
                 prepared.namespace_proof.clone(),
             )
             .await;
-            reconcile_after_mutation_failure(ctx, &[]).await;
+            reconcile_after_mutation_failure(ctx).await;
             return Err(with_rollback_error(
                 crate::modules::mutation::application::workspace_mutation::engine::classify_rename_failure_with_identity(plan.old_path(), plan.expected_identity(), error),
                 rollback,
@@ -220,7 +220,7 @@ async fn rename_with_hook(
                     prepared.namespace_proof.clone(),
                 )
                 .await;
-                reconcile_after_mutation_failure(ctx, &[]).await;
+                reconcile_after_mutation_failure(ctx).await;
                 return Err(with_rollback_error(object_toggle_error(error), rollback));
             }
         }
@@ -253,7 +253,7 @@ async fn rename_with_hook(
                 prepared.namespace_proof.clone(),
             )
             .await;
-            reconcile_after_mutation_failure(ctx, &[]).await;
+            reconcile_after_mutation_failure(ctx).await;
             return Err(with_rollback_error(object_toggle_error(error), rollback));
         }
         let sequence = applied.len() as u32;
@@ -272,7 +272,7 @@ async fn rename_with_hook(
                     prepared.namespace_proof.clone(),
                 )
                 .await;
-                reconcile_after_mutation_failure(ctx, &[]).await;
+                reconcile_after_mutation_failure(ctx).await;
                 return Err(with_rollback_error(object_toggle_error(error), rollback));
             }
         }
@@ -402,7 +402,7 @@ async fn rename_with_hook(
                     prepared.namespace_proof.clone(),
                 )
                 .await;
-                reconcile_after_mutation_failure(ctx, &[]).await;
+                reconcile_after_mutation_failure(ctx).await;
                 return Err(with_rollback_error(
                     CollectionError::Db(format!(
                         "Post-rename disk reconcile did not apply: {:?}",
@@ -419,7 +419,7 @@ async fn rename_with_hook(
                     prepared.namespace_proof.clone(),
                 )
                 .await;
-                reconcile_after_mutation_failure(ctx, &[]).await;
+                reconcile_after_mutation_failure(ctx).await;
                 return Err(with_rollback_error(
                     CollectionError::Db(format!("Post-rename disk reconcile failed: {error}")),
                     rollback,

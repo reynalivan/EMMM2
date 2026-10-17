@@ -3,9 +3,20 @@
 
 use crate::shared::errors::ScannerError;
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 
 use crate::modules::matching::application::deep_matcher;
+
+static ALIAS_SOURCE_REVISION: AtomicU64 = AtomicU64::new(0);
+
+pub(crate) fn committed_object_removal() {
+    ALIAS_SOURCE_REVISION.fetch_add(1, Ordering::AcqRel);
+}
+
+fn alias_source_revision() -> u64 {
+    ALIAS_SOURCE_REVISION.load(Ordering::Acquire)
+}
 
 /// Parsed MasterDB per game type, so a 5 MB JSON is read and parsed once.
 #[derive(Default)]
@@ -14,7 +25,7 @@ pub struct MasterDbCache(tokio::sync::RwLock<CacheState>);
 #[derive(Default)]
 struct CacheState {
     generation: u64,
-    entries: HashMap<String, Arc<deep_matcher::MasterDb>>,
+    entries: HashMap<String, (u64, Arc<deep_matcher::MasterDb>)>,
 }
 
 impl MasterDbCache {
@@ -37,6 +48,7 @@ impl MasterDbCache {
     async fn get_or_load<F, Fut>(
         &self,
         canonical: &str,
+        source_revision: impl Fn() -> u64,
         load: F,
     ) -> Result<Arc<deep_matcher::MasterDb>, ScannerError>
     where
@@ -44,9 +56,17 @@ impl MasterDbCache {
         Fut: std::future::Future<Output = Result<deep_matcher::MasterDb, ScannerError>>,
     {
         loop {
+            let alias_revision = source_revision();
             let generation = {
                 let state = self.0.read().await;
-                if let Some(hit) = state.entries.get(canonical) {
+                if source_revision() != alias_revision {
+                    continue;
+                }
+                if let Some((_, hit)) = state
+                    .entries
+                    .get(canonical)
+                    .filter(|(revision, _)| *revision == alias_revision)
+                {
                     return Ok(Arc::clone(hit));
                 }
                 state.generation
@@ -54,11 +74,19 @@ impl MasterDbCache {
             let loaded = load().await;
             let mut state = self.0.write().await;
             // Loading awaits SQLite. Do not publish a read from before an invalidation.
-            if state.generation != generation {
+            if state.generation != generation || source_revision() != alias_revision {
                 continue;
             }
             let parsed = Arc::new(loaded?);
-            let hit = state.entries.entry(canonical.to_string()).or_insert(parsed);
+            let (_, hit) = state
+                .entries
+                .entry(canonical.to_string())
+                .and_modify(|cached| {
+                    if cached.0 != alias_revision {
+                        *cached = (alias_revision, Arc::clone(&parsed));
+                    }
+                })
+                .or_insert((alias_revision, parsed));
             return Ok(Arc::clone(hit));
         }
     }
@@ -83,7 +111,7 @@ pub async fn get_cached(
         ScannerError::Io(format!("failed to resolve app data directory: {error}"))
     })?;
     cache
-        .get_or_load(&canonical, || async {
+        .get_or_load(&canonical, alias_source_revision, || async {
             let mut entries = super::load_master_db_entries(&app_data_dir, game_type)?;
             attach_user_aliases(
                 &mut entries,

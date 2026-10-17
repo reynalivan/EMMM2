@@ -42,6 +42,16 @@ EMMM2's backend is a **Modular Monolith** using **Strict Vertical Slices**.
 
 ## 4. Key Data Flows
 
+- **Object folder ownership:** Catalog and Library share `platform::fs::owned_folder_create::PreparedFolderCreate`. New folders retain root, parent and source identity proofs, publish under coordinator admission, and use the existing `FOLDER_CREATE` journal contract. Catalog staging and thumbnail writes use the same physical namespace while retaining the configured root proof, so junction roots remain supported and retargeted aliases cannot redirect writes. Compensation and crash recovery remove only owned empty directories; changed identity, namespace or unfamiliar contents preserve repair evidence. Missing-source object deletion reconciles metadata under the retained game lock and mutation lease without adopting a late folder.
+
+- **Matcher aliases:** The reconciliation writer reports actual object pruning; only a successful projection commit advances the AppHandle-free object-alias revision. Parsed MasterDb cache loads fence both their existing generation and this revision, so removed aliases cannot remain indefinitely in a warm matcher.
+
+- **Duplicate resolution batches:** Durable preparation validates canonical physical keeper/target sets before creating any steps. A target cannot be another request's keeper or have two destructive owners; shared keepers and distinct enabled/disabled siblings remain valid. Frontend validation explains overlapping choices before confirmation; backend validation remains authoritative.
+
+- **Overlay and thumbnail retention:** Overlay disable preserves existing non-INI backups with no-replace moves. Duplicate entrypoint rollback aggregates failures and retains its journal until every entry is settled. Completed thumbnail L1 entries retain root/source locations within the bounded LRU; ancestor identities invalidate deleted nested sources across root toggles and junction aliases, while in-flight tickets continue fencing publication. Filesystem inspection occurs outside the cache mutex.
+
+- **Collection recovery references:** Deleting a named collection checks open task rollback references inside the deletion transaction, using the same guard as consuming or clearing a runtime draft. PENDING/RUNNING task snapshots remain intact; settled tasks do not block ordinary deletion. Rename responses derive active status from the originating game's runtime pointer.
+
 - **Catalog updates:** A manually installed pack declares its public GitHub repository in `manifest.json` `source`. The manual updater parses that URL with the same restricted GitHub source parser as catalog import; no catalog repository endpoint is compiled into EMMM. Downloaded updates must pass the pinned Ed25519 signature and match the installed pack ID and repository before the atomic swap. A pack without a valid GitHub source remains usable locally but cannot use update check/install.
 
 - **Import completion accounting:** Newly created canonical object counts derive from distinct planned object paths present in the executor's created-directory evidence. Multiple imported mods sharing one object count it once; an existing object counts zero. New commits reject occupied targets before publication; the historical interrupted-item collision recovery and its report counts remain active.

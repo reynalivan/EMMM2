@@ -24,6 +24,41 @@ function group(id: string, paths: string[], confidenceScore = 100): DupScanGroup
 }
 
 describe('buildResolutionRequests', () => {
+  it.each([
+    [
+      ['a', 'b'],
+      ['b', 'c'],
+      ['c', 'a'],
+    ],
+    [
+      ['a', 'b'],
+      ['b', 'c'],
+    ],
+    [
+      ['a', 'b'],
+      ['c', 'b'],
+    ],
+  ])('rejects overlapping destructive choices %j', (...pairs) => {
+    const groups = pairs.map((paths, index) => group(`g${index}`, paths));
+    const selections = new Map<string, DuplicateSelection>(
+      pairs.map((paths, index) => [`g${index}`, { type: 'Keep', targetPath: paths[0] }]),
+    );
+    expect(() => buildResolutionRequests(selections, groups)).toThrow();
+  });
+
+  it('allows a shared keeper and distinct enabled/disabled losers', () => {
+    const selections = new Map<string, DuplicateSelection>([
+      ['g1', { type: 'Keep', targetPath: 'a' }],
+      ['g2', { type: 'Keep', targetPath: 'a' }],
+    ]);
+    expect(
+      buildResolutionRequests(selections, [
+        group('g1', ['a', 'b']),
+        group('g2', ['a', 'DISABLED b']),
+      ]),
+    ).toHaveLength(2);
+  });
+
   it('keeps one member by trashing every other member', () => {
     const selections = new Map<string, DuplicateSelection>([
       ['g1', { type: 'Keep', targetPath: 'a' }],

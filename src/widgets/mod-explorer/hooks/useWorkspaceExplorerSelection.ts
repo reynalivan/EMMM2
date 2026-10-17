@@ -114,34 +114,6 @@ export function useWorkspaceExplorerSelection({
     clearExplicitPaths();
   }, [clearExplicitPaths]);
 
-  const replaceExplicitPaths = useCallback(
-    (paths: Iterable<string>) => {
-      setAllMatching(null);
-      setExplicitPaths(new Set(paths));
-    },
-    [setExplicitPaths],
-  );
-
-  const addPaths = useCallback(
-    (paths: Iterable<string>) => {
-      if (allMatching) {
-        const nextExcluded = new Set(allMatching.excludedPaths);
-        for (const path of paths) {
-          nextExcluded.delete(path);
-        }
-        setAllMatching({ ...allMatching, excludedPaths: nextExcluded });
-        return;
-      }
-
-      const nextPaths = new Set(explicitPaths);
-      for (const path of paths) {
-        nextPaths.add(path);
-      }
-      setExplicitPaths(nextPaths);
-    },
-    [allMatching, explicitPaths, setExplicitPaths],
-  );
-
   const removePaths = useCallback(
     (paths: Iterable<string>) => {
       if (allMatching) {
@@ -160,30 +132,6 @@ export function useWorkspaceExplorerSelection({
       setExplicitPaths(nextPaths);
     },
     [allMatching, explicitPaths, setExplicitPaths],
-  );
-
-  const togglePath = useCallback(
-    (path: string, multi: boolean) => {
-      if (allMatching && multi) {
-        const nextExcluded = new Set(allMatching.excludedPaths);
-        if (nextExcluded.has(path)) {
-          nextExcluded.delete(path);
-        } else {
-          nextExcluded.add(path);
-        }
-        setAllMatching({ ...allMatching, excludedPaths: nextExcluded });
-        return;
-      }
-
-      const nextPaths = new Set(multi ? explicitPaths : []);
-      if (nextPaths.has(path)) {
-        nextPaths.delete(path);
-      } else {
-        nextPaths.add(path);
-      }
-      replaceExplicitPaths(nextPaths);
-    },
-    [allMatching, explicitPaths, replaceExplicitPaths],
   );
 
   const selectAllMatching = useCallback(() => {
@@ -212,10 +160,7 @@ export function useWorkspaceExplorerSelection({
     selectedCount,
     isPathSelected,
     clearSelection,
-    replaceExplicitPaths,
-    addPaths,
     removePaths,
-    togglePath,
     selectAllMatching,
     createAllMatchingCommit,
   };

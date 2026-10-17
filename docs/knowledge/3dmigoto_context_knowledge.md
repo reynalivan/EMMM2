@@ -1,65 +1,65 @@
-# 3DMigoto Context Knowledge untuk EMMM2NEW
+# 3DMigoto Context Knowledge for EMMM2NEW
 
-> Basis pengetahuan dan panduan teknis per 2026-08-11. Gunakan untuk memahami runtime, menulis/mendiagnosis mod, dan mengintegrasikan EMMM dengan package XXMI. Status gap dan hasil remediation berada di [`3dmigoto_gap_status.md`](./3dmigoto_gap_status.md).
+> Knowledge base and technical guide as of 2026-08-11. Use it to understand the runtime, write/diagnose mods, and integrate EMMM with XXMI packages. Gap status and remediation results are in [`3dmigoto_gap_status.md`](./3dmigoto_gap_status.md).
 
-## 1. Tujuan dan batas sumber
+## 1. Purpose and source boundaries
 
-Fokus EMMM adalah empat subsistem yang saling terhubung:
+EMMM focuses on four interconnected subsystems:
 
-1. INI Reader/Formatter: membaca file mod tanpa merusak bentuk aslinya dan mengekstrak variable/key binding yang dapat diedit.
-2. INI Writer: mengubah baris terpilih dengan backup dan replace yang aman.
-3. KeyViewer: memanen hash/keybind mod aktif, mencocokkannya dengan MasterDB, lalu membuat overlay 3DMigoto.
-4. Switch mod: mengaktifkan/nonaktifkan folder melalui konvensi `DISABLED `, merekonsiliasi disk/DB, memperbarui artifact overlay, lalu memuat ulang konfigurasi runtime bila aman.
+1. INI Reader/Formatter: reads mod files without altering their original form and extracts editable variables/key bindings.
+2. INI Writer: changes selected lines with a backup and safe replacement.
+3. KeyViewer: harvests hashes/keybinds from active mods, matches them against MasterDB, and then creates a 3DMigoto overlay.
+4. Mod switching: enables/disables folders through the `DISABLED ` convention, reconciles disk/DB state, updates overlay artifacts, and reloads runtime configuration when safe.
 
-Hierarki kepercayaan sumber:
+Source trust hierarchy:
 
-- Utama: source code [bo3b/3Dmigoto](https://github.com/bo3b/3Dmigoto), file konfigurasi paket XXMI, dan kode EMMM lokal.
-- Pendukung: README, guides, releases, dan asset database milik pemilik project terkait.
-- Tutorial: [leotorrez modding docs](https://leotorrez.github.io/modding/docs/); berguna untuk workflow, tetapi halaman itu sendiri menyatakan sintaksnya berorientasi GIMI/XXMI dan tidak semuanya berlaku pada upstream 3Dmigoto.
-- `https://www.3dmigoto.com`: hasil scrape tidak dipakai sebagai sumber pengetahuan. README resmi bo3b memperingatkan domain tersebut adalah phishing dan bukan milik project; snapshot yang sempat diambil oleh research worker hanya berupa overview/marketing dan tidak mengalahkan peringatan tersebut. Rujukan resmi tetap [GitHub bo3b](https://github.com/bo3b/3Dmigoto).
-- Context7: pencarian `3Dmigoto` menghasilkan “No libraries found”; Context7 bukan sumber yang cocok untuk project ini. Source GitHub menjadi fallback utama.
+- Primary: [bo3b/3Dmigoto](https://github.com/bo3b/3Dmigoto) source code, XXMI package configuration files, and local EMMM code.
+- Supporting: READMEs, guides, releases, and asset databases maintained by the related project owners.
+- Tutorial: [leotorrez modding docs](https://leotorrez.github.io/modding/docs/); useful for workflows, but the pages themselves state that their syntax is GIMI/XXMI-oriented and not all of it applies to upstream 3Dmigoto.
+- `https://www.3dmigoto.com`: scraped results are not used as a knowledge source. The official bo3b README warns that this domain is phishing and is not owned by the project; a snapshot previously taken by the research worker contained only an overview/marketing and does not override that warning. The official reference remains [bo3b on GitHub](https://github.com/bo3b/3Dmigoto).
+- Context7: a search for `3Dmigoto` returned “No libraries found”; Context7 is not a suitable source for this project. GitHub source is the primary fallback.
 
-Percakapan Claude yang dibaca: `E:/Downloads/3dmigoto_EMMM2NEW.md`. Workflow deep-research terakhir di percakapan itu gagal seluruhnya karena limit sesi, sehingga kesimpulan lama diverifikasi ulang di sini dan tidak diterima mentah-mentah.
+Claude conversation reviewed: `E:/Downloads/3dmigoto_EMMM2NEW.md`. The last deep-research workflow in that conversation failed entirely because of a session limit, so its earlier conclusions were re-verified here rather than accepted at face value.
 
-## 2. Peta ekosistem repository
+## 2. Repository ecosystem map
 
-| Repository                                                                                  | Isi penting                                                                                                              | Posisi dalam sistem                                                                      |
+| Repository                                                                                  | Key contents                                                                                                             | Role in the system                                                                       |
 | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
-| [bo3b/3Dmigoto](https://github.com/bo3b/3Dmigoto)                                           | Wrapper/hook DirectX 11, parser INI, command-list engine, hunting/frame analysis, loader, contoh `Dependencies/d3dx.ini` | Upstream resmi dan sumber semantik runtime                                               |
-| [rayshire/3dmigoto](https://github.com/rayshire/3dmigoto)                                   | Fork `SilentNightSound/GI-Model-Importer`; root berisi Guides, Tools, dan ZIP GIMI                                       | Bukan fork langsung upstream bo3b; mirror/varian GIMI lama                               |
-| [SilentNightSound/GIMI-Package](https://github.com/SilentNightSound/GIMI-Package)           | `GIMI/d3dx.ini`, `Core/GIMI`, shader/font/API/notification                                                               | Paket GIMI modern untuk XXMI; relevan untuk kontrak runtime saat ini                     |
-| [SilentNightSound/GI-Model-Importer](https://github.com/SilentNightSound/GI-Model-Importer) | Guides, Blender tools/scripts, ZIP dev/play                                                                              | Standalone GIMI lama; README menyatakan deprecated dan mengarahkan ke XXMI               |
-| [GI-Model-Importer-Assets](https://github.com/SilentNightSound/GI-Model-Importer-Assets)    | Player/NPC/enemy/weapon/skill data, buffer/texture, `hash.json`                                                          | Sumber fakta hash/model GI untuk MasterDB/importer                                       |
-| [SR-Model-Importer](https://github.com/SilentNightSound/SR-Model-Importer)                  | Port importer/tools/guides untuk HSR                                                                                     | Tooling/export-import HSR berbasis pola GIMI                                             |
-| [SR-Model-Importer-Assets](https://github.com/SilentNightSound/SR-Model-Importer-Assets)    | Player/weapon/skill/enemy assets dan `hash.json`                                                                         | Sumber fakta hash/model HSR                                                              |
-| [SpectrumQT/WWMI-Package](https://github.com/SpectrumQT/WWMI-Package)                       | `WWMI/d3dx.ini`, `Core/WWMI`, custom shader examples                                                                     | Paket XXMI untuk Wuthering Waves; namespace/API tidak boleh diasumsikan sama dengan GIMI |
-| [leotorrez/ZZ-Model-Importer](https://github.com/leotorrez/ZZ-Model-Importer)               | ZIP ZZMI, Tools, petunjuk XXMI                                                                                           | Varian untuk ZZZ; hot-load F10 dan toggle paket F6                                       |
-| [SpectrumQT/XXMI-Launcher](https://github.com/SpectrumQT/XXMI-Launcher)                     | Python app, core/gui, locale, themes, installer/updater                                                                  | Orkestrator instalasi/launch/config; runtime mod tetap paket 3Dmigoto per game           |
+| [bo3b/3Dmigoto](https://github.com/bo3b/3Dmigoto)                                           | DirectX 11 wrapper/hook, INI parser, command-list engine, hunting/frame analysis, loader, example `Dependencies/d3dx.ini` | Official upstream and source of runtime semantics                                       |
+| [rayshire/3dmigoto](https://github.com/rayshire/3dmigoto)                                   | Fork of `SilentNightSound/GI-Model-Importer`; root contains Guides, Tools, and GIMI ZIPs                                  | Not a direct fork of bo3b upstream; an older GIMI mirror/variant                         |
+| [SilentNightSound/GIMI-Package](https://github.com/SilentNightSound/GIMI-Package)           | `GIMI/d3dx.ini`, `Core/GIMI`, shader/font/API/notification                                                               | Modern GIMI package for XXMI; relevant to the current runtime contract                   |
+| [SilentNightSound/GI-Model-Importer](https://github.com/SilentNightSound/GI-Model-Importer) | Guides, Blender tools/scripts, dev/play ZIPs                                                                            | Older standalone GIMI; README says it is deprecated and points users to XXMI              |
+| [GI-Model-Importer-Assets](https://github.com/SilentNightSound/GI-Model-Importer-Assets)    | Player/NPC/enemy/weapon/skill data, buffers/textures, `hash.json`                                                        | Source of GI hash/model facts for MasterDB/importer                                      |
+| [SR-Model-Importer](https://github.com/SilentNightSound/SR-Model-Importer)                  | Port of importer/tools/guides for HSR                                                                                    | HSR tooling/export-import based on GIMI patterns                                        |
+| [SR-Model-Importer-Assets](https://github.com/SilentNightSound/SR-Model-Importer-Assets)    | Player/weapon/skill/enemy assets and `hash.json`                                                                         | Source of HSR hash/model facts                                                          |
+| [SpectrumQT/WWMI-Package](https://github.com/SpectrumQT/WWMI-Package)                       | `WWMI/d3dx.ini`, `Core/WWMI`, custom shader examples                                                                     | XXMI package for Wuthering Waves; its namespace/API must not be assumed to match GIMI    |
+| [leotorrez/ZZ-Model-Importer](https://github.com/leotorrez/ZZ-Model-Importer)               | ZZMI ZIP, Tools, XXMI instructions                                                                                        | ZZZ variant; F10 hot-load and F6 package toggle                                         |
+| [SpectrumQT/XXMI-Launcher](https://github.com/SpectrumQT/XXMI-Launcher)                     | Python app, core/gui, locale, themes, installer/updater                                                                  | Installation/launch/config orchestrator; the runtime mod remains a per-game 3Dmigoto package |
 
-Relasi sederhananya: upstream 3Dmigoto menyediakan interception dan bahasa INI; paket GIMI/SRMI/WWMI/ZZMI mengadaptasi runtime per game; asset repos menyediakan hash dan data model; tools Blender menghasilkan resource/INI; XXMI Launcher memasang dan menjalankan paket tersebut; EMMM mengelola folder mod dan artifact runtime di atas layout `Mods`.
+In simple terms: upstream 3Dmigoto provides interception and the INI language; GIMI/SRMI/WWMI/ZZMI packages adapt the runtime for each game; asset repositories provide hashes and model data; Blender tools produce resources/INI files; XXMI Launcher installs and runs those packages; EMMM manages mod folders and runtime artifacts on top of the `Mods` layout.
 
-### 2.1 Tur file-level: bo3b/3Dmigoto
+### 2.1 File-level tour: bo3b/3Dmigoto
 
-Root upstream memperlihatkan batas-batas tanggung jawab berikut:
+The upstream root shows the following responsibility boundaries:
 
-- `DirectX11/`: wrapper device/context/resource dan titik utama interception DX11. Ini area yang membuat override dapat bereaksi terhadap draw/resource aktif.
-- `DirectXGI/`: factory, swap-chain, dan present path. Overlay serta pekerjaan `[Present]` bergantung pada lifecycle ini.
-- `DirectX9/` dan `DirectX10/`: komponen kompatibilitas lintas versi; tidak semua fitur fork XXMI dapat disimpulkan hanya dari label DX11.
-- `Injector/`: loader/injection flow. Package XXMI dapat menaruh loader/runtime terpisah dari executable game.
-- `HLSLDecompiler/`, `BinaryDecompiler/`, dan `D3D_Shaders/`: hunting, disassembly/decompilation, dan tooling shader.
-- `D3DCompiler*`: wrapper/dukungan beberapa versi compiler shader.
-- `Dependencies/`: template runtime, termasuk `d3dx.ini`, sumber praktis untuk grammar key, include, hunting, rendering, resource, dan loader.
-- `NVAPI/`: integration NVIDIA/stereoscopic legacy; bukan core EMMM, tetapi menjelaskan asal project.
-- `ini_parser_lite.cpp`, `vkeys.h`, dan source DirectX11 command list adalah rujukan ketika dokumentasi dan perilaku package berbeda.
-- `StereovisionHacks.sln` adalah solution build upstream. Repository ini source developer, bukan distribusi end-user siap pakai.
+- `DirectX11/`: device/context/resource wrappers and the primary DX11 interception points. This is where overrides can react to active draws/resources.
+- `DirectXGI/`: factory, swap-chain, and present path. The overlay and `[Present]` work depend on this lifecycle.
+- `DirectX9/` and `DirectX10/`: cross-version compatibility components; XXMI fork features cannot all be inferred from the DX11 label alone.
+- `Injector/`: loader/injection flow. An XXMI package may place the loader/runtime separately from the game executable.
+- `HLSLDecompiler/`, `BinaryDecompiler/`, and `D3D_Shaders/`: hunting, disassembly/decompilation, and shader tooling.
+- `D3DCompiler*`: wrapper/support for several shader compiler versions.
+- `Dependencies/`: runtime templates, including `d3dx.ini`, a practical source for key grammar, includes, hunting, rendering, resources, and the loader.
+- `NVAPI/`: legacy NVIDIA/stereoscopic integration; not part of EMMM core, but it explains the project's origins.
+- `ini_parser_lite.cpp`, `vkeys.h`, and DirectX11 command-list sources are references when documentation and package behavior differ.
+- `StereovisionHacks.sln` is the upstream build solution. This repository is developer source, not a ready-to-use end-user distribution.
 
-README atau template `d3dx.ini` menjelaskan kontrak yang diharapkan, tetapi source parser/executor tetap otoritas terakhir untuk edge case seperti duplicate property, path resolution, namespace, dan pre/post ordering.
+The README or `d3dx.ini` template describes the expected contract, but parser/executor source remains the final authority for edge cases such as duplicate properties, path resolution, namespaces, and pre/post ordering.
 
-### 2.2 Tur file-level: paket runtime XXMI
+### 2.2 File-level tour: XXMI runtime packages
 
 #### GIMI-Package
 
-Layout inti yang telah diverifikasi:
+Verified core layout:
 
 ```text
 GIMI/
@@ -76,17 +76,17 @@ GIMI/
     └── Shaders/
 ```
 
-- `d3dx.ini` memilih target/loader, memasukkan `Core\GIMI\main.ini`, dan memindai `Mods` rekursif.
-- `main.ini` adalah composition root GIMI: subsystem core, renderer text, notification, dan variables package bertemu di sana.
-- `API.ini` adalah contract publik untuk fitur seperti `CommandList\GIMIv8\PrintText`.
-- `KeyBindings.ini` mendefinisikan F6/F10/F12 dan variable package.
-- `help.ini` menyediakan bridge untuk mod lama, tetapi komentarnya menyatakan deprecated.
-- `d3dx_patch.ini` adalah patch/config extension package dan bukan mod user biasa.
-- Fonts/Shaders/Notifications adalah dependency renderer; hardcode satu file tanpa memahami dependency graph berisiko pecah saat package berubah.
+- `d3dx.ini` selects the target/loader, includes `Core\GIMI\main.ini`, and recursively scans `Mods`.
+- `main.ini` is the GIMI composition root: the core subsystems, text renderer, notifications, and package variables meet there.
+- `API.ini` is the public contract for features such as `CommandList\GIMIv8\PrintText`.
+- `KeyBindings.ini` defines F6/F10/F12 and package variables.
+- `help.ini` provides a bridge for older mods, but its comments mark it as deprecated.
+- `d3dx_patch.ini` is a package patch/config extension, not an ordinary user mod.
+- Fonts/Shaders/Notifications are renderer dependencies; hardcoding one file without understanding the dependency graph risks breakage when the package changes.
 
 #### WWMI-Package
 
-Layout core yang telah diverifikasi:
+Verified core layout:
 
 ```text
 WWMI/
@@ -101,104 +101,104 @@ WWMI/
     └── Shaders/
 ```
 
-Perbedaannya bukan kosmetik. Namespace `WWMIv1`, composition root, utilities, compatibility mode, dan API command list dapat berbeda dari `GIMIv8`. `GameType -> RuntimeProfile` harus memilih capability, bukan sekadar mengganti string nama game.
+The differences are not cosmetic. The `WWMIv1` namespace, composition root, utilities, compatibility mode, and command-list API can differ from `GIMIv8`. `GameType -> RuntimeProfile` must select capabilities, not merely replace the game-name string.
 
-#### SRMI dan ZZMI
+#### SRMI and ZZMI
 
-- Repository standalone SRMI/ZZMI menyimpan ZIP development/play dan tools, bukan source tree package modern selengkap GIMI-Package/WWMI-Package.
-- SRMI README menjelaskan banyak file di-port dari GIMI dan mungkin masih menyimpan referensi Genshin; kompatibilitas tidak boleh diasumsikan hanya karena struktur serupa.
-- ZZMI mengarahkan instalasi ke XXMI Launcher, memakai F6 untuk toggle dependent mods, F10 untuk reload/save, dan F12 untuk guide.
-- Profile SRMI/ZZMI sebaiknya diturunkan dari instalasi package aktual yang dipilih user, bukan dari ZIP lama di repository saja.
+- Standalone SRMI/ZZMI repositories contain development/play ZIPs and tools, not a modern package source tree as complete as GIMI-Package/WWMI-Package.
+- The SRMI README says many files were ported from GIMI and may still contain Genshin references; do not assume compatibility just because the structure is similar.
+- ZZMI directs installation through XXMI Launcher and uses F6 to toggle dependent mods, F10 to reload/save, and F12 for the guide.
+- SRMI/ZZMI profiles should be derived from the actual package installation selected by the user, not only from old repository ZIPs.
 
-### 2.3 Tur file-level: importer tools
+### 2.3 File-level tour: importer tools
 
-`GI-Model-Importer/Tools` memberi gambaran pipeline authoring:
+`GI-Model-Importer/Tools` provides an overview of the authoring pipeline:
 
-- `blender_3dmigoto_gimi.py`: addon import/export Blender dengan custom properties 3dmigoto.
-- `genshin_3dmigoto_collect.py`: tooling collect/dump generasi lama.
-- `genshin_3dmigoto_generate.py`: menghasilkan buffer/resource dan memformat INI hasil export.
-- `genshin_merge_mods.py`: menggabungkan mod; hasilnya dapat memiliki nested INI dan struktur lebih kompleks daripada satu mod sederhana.
-- `genshin_animation_creator.py`, damage merge, outline, transparency, dan color scripts menunjukkan INI mod dapat mempunyai command list/variable kaya.
-- Script Blender untuk bone deletion, vertex-group remap/merge/fill, unused-group cleanup, dan custom-property transfer menjaga metadata model, tetapi berada di luar tanggung jawab INI editor EMMM.
+- `blender_3dmigoto_gimi.py`: Blender import/export add-on with 3dmigoto custom properties.
+- `genshin_3dmigoto_collect.py`: legacy collect/dump tooling.
+- `genshin_3dmigoto_generate.py`: generates buffers/resources and formats exported INI files.
+- `genshin_merge_mods.py`: merges mods; the result can contain nested INI files and a structure more complex than a single simple mod.
+- `genshin_animation_creator.py`, damage merge, outline, transparency, and color scripts show that mod INI files can contain rich command lists/variables.
+- Blender scripts for bone deletion, vertex-group remapping/merging/filling, unused-group cleanup, and custom-property transfer preserve model metadata, but are outside the EMMM INI editor's responsibility.
 
-File mod valid dapat dibuat manusia, generator, atau merge tool. Reader/Writer EMMM tidak boleh memformat ulang seluruh file berdasarkan satu gaya contoh.
+Valid mod files can be created by people, generators, or merge tools. The EMMM Reader/Writer must not reformat an entire file based on a single example style.
 
-#### 2.3.1 `merged.ini` dan ownership subvariant
+#### 2.3.1 `merged.ini` and subvariant ownership
 
-`genshin_merge_mods.py` membangun satu orchestrator `merged.ini`: variable cycle seperti `$swapvar` memilih branch/CommandList, sedangkan resource dan file milik beberapa source variant tetap berada di descendant folder. Source INI variant biasanya dinonaktifkan agar 3DMigoto tidak mengeksekusi orchestrator dan source secara bersamaan.
+`genshin_merge_mods.py` builds one `merged.ini` orchestrator: cycle variables such as `$swapvar` select a branch/CommandList, while resources and files belonging to several source variants remain in descendant folders. Source-variant INI files are usually disabled so 3DMigoto does not execute the orchestrator and source files at the same time.
 
-Konsekuensi untuk Storage Optimizer:
+Consequences for Storage Optimizer:
 
-- root hasil merge beserta seluruh descendant adalah satu logical mod unit, bukan kumpulan mod duplikat;
-- status `DISABLED` pada child INI adalah bagian dari orchestration dan bukan bukti bahwa asset child bebas dihapus;
-- nama `merged.ini` hanya hint; batas ownership utama tetap terminal root hasil classifier/walker;
-- hash target 3DMigoto yang sama dapat berarti subvariant, recolor, atau runtime conflict. Ia bukan bukti byte-identical;
-- partial content hash hanya untuk prefilter. Aksi Keep/Delete/Hardlink membutuhkan path-aware manifest semua file reguler dan full BLAKE3 yang identik;
-- section TextureOverride menerima resource hash 8-hex, sedangkan ShaderOverride/replacement memakai shader hash 16-hex. Typed target ini berguna untuk explanation/conflict review, tidak memberi izin destruktif.
+- the merged output root and all descendants form one logical mod unit, not a set of duplicate mods;
+- `DISABLED` status on a child INI is part of orchestration and does not prove that the child asset can be deleted safely;
+- `merged.ini` is only a hint; the primary ownership boundary remains the terminal root identified by the classifier/walker;
+- the same 3DMigoto target hash can indicate a subvariant, recolor, or runtime conflict. It does not prove byte identity;
+- partial content hashes are only for prefiltering. Keep/Delete/Hardlink actions require a path-aware manifest of all regular files and matching full BLAKE3 hashes;
+- TextureOverride sections accept 8-hex resource hashes, while ShaderOverride/replacement uses 16-hex shader hashes. These typed targets help with explanations/conflict review but do not authorize destructive actions.
 
-Decoder bersama saat ini mencakup UTF-8 (dengan/tanpa BOM) dan fallback Shift-JIS. UTF-16 LE/BE belum menjadi capability yang didukung; mod dengan encoding itu harus ditolak/ditandai sampai reader dan lossless writer sama-sama mendukungnya.
+The shared decoder currently supports UTF-8 (with or without a BOM) and Shift-JIS fallback. UTF-16 LE/BE is not yet a supported capability; mods using it must be rejected/flagged until both the reader and lossless writer support it.
 
-Semantik branch bergantung pada urutan command section yang diproses 3DMigoto. Karena itu flatten child variant atau menyatukan relasi secara transitif dapat mengubah perilaku walaupun beberapa texture/buffer kebetulan sama.
+Branch semantics depend on the order in which 3DMigoto processes command sections. Flattening child variants or transitively combining relationships can therefore change behavior even when some textures/buffers happen to be identical.
 
-### 2.4 Tur file-level: asset repositories
+### 2.4 File-level tour: asset repositories
 
-GI assets membagi data menjadi `PlayerCharacterData`, `NPCData`, `EnemyData`, `WeaponData`, `SkillData`, dan `MiscellaneousData`. SR assets memakai `PlayerCharacterData`, `WeaponData`, `SkillObjData`, dan `EnemyData`.
+GI assets divide data into `PlayerCharacterData`, `NPCData`, `EnemyData`, `WeaponData`, `SkillData`, and `MiscellaneousData`. SR assets use `PlayerCharacterData`, `WeaponData`, `SkillObjData`, and `EnemyData`.
 
-Satu folder object dapat memuat model/buffer/texture dan `hash.json`. Bentuk `hash.json` adalah array component, bukan satu flat object:
+An object folder can contain models/buffers/textures and `hash.json`. The `hash.json` structure is an array of components, not one flat object:
 
-| Field                    | Makna praktis                                                        | Karakteristik                |
+| Field                    | Practical meaning                                                    | Characteristics             |
 | ------------------------ | -------------------------------------------------------------------- | ---------------------------- |
-| `component_name`         | Nama bagian seperti Hair/Body/Face atau kosong untuk component utama | Tidak selalu unik/global     |
-| `root_vs`                | Root vertex shader                                                   | Umumnya 16 hex; dapat kosong |
+| `component_name`         | Part name such as Hair/Body/Face, or empty for the main component    | Not always unique/global     |
+| `root_vs`                | Root vertex shader                                                   | Usually 16 hex; may be empty |
 | `draw_vb`                | Hash buffer pengenal draw/model                                      | 8 hex                        |
-| `position_vb`            | Posisi vertex                                                        | 8 hex                        |
+| `position_vb`            | Vertex positions                                                     | 8 hex                        |
 | `blend_vb`               | Weight/bone blend                                                    | 8 hex                        |
 | `texcoord_vb`            | UV/tangent/normal stream sesuai game                                 | 8 hex                        |
 | `ib`                     | Index buffer                                                         | 8 hex                        |
-| `object_indexes`         | First-index/slice component                                          | Array integer                |
-| `object_classifications` | Label bagian per index                                               | Array sejajar dengan indexes |
-| `texture_hashes`         | Texture type, extension, hash per classification                     | Nested array; hash 8 hex     |
+| `object_indexes`         | Component first-index/slice                                           | Integer array                |
+| `object_classifications` | Per-index part label                                                  | Array aligned with indexes   |
+| `texture_hashes`         | Texture type, extension, and hash per classification                 | Nested array; hash 8 hex     |
 
-Albedo mempunyai component utama dengan `root_vs` 16-hex dan component `Face` terpisah yang sebagian field-nya kosong. Blade di SR mempunyai Hair, Head, dan Body dengan beberapa classification. Loader MasterDB harus menjaga provenance game/object/component/skin/hash-type; flatten tanpa type menghilangkan informasi penting bagi matcher.
+Albedo has a main component with a 16-hex `root_vs` and a separate `Face` component with some empty fields. Blade in SR has Hair, Head, and Body with several classifications. The MasterDB loader must preserve game/object/component/skin/hash-type provenance; flattening without types removes information important to the matcher.
 
-### 2.5 Tur file-level: XXMI Launcher
+### 2.5 File-level tour: XXMI Launcher
 
-Root launcher berisi `src/xxmi_launcher`, `Locale`, `Themes/Default`, `public-media`, dan `requirements.txt`. Tanggung jawabnya:
+The launcher root contains `src/xxmi_launcher`, `Locale`, `Themes/Default`, `public-media`, and `requirements.txt`. Its responsibilities are to:
 
-- memasang package model importer yang benar;
-- menyimpan konfigurasi launch dan path;
-- memperbarui launcher serta instance package;
-- memverifikasi authenticity download/library menurut README;
-- memulai game/runtime dengan layout yang mungkin berbeda dari folder executable game.
+- install the correct model-importer package;
+- store launch configuration and paths;
+- update the launcher and package instances;
+- verify download/library authenticity according to the README;
+- start the game/runtime with a layout that may differ from the game executable folder.
 
-EMMM tidak seharusnya menganggap `game_exe.parent()` adalah root package. `mod_path`, `loader_exe`, dan discovery instalasi XXMI aktual lebih kuat sebagai sumber lokasi runtime.
+EMMM should not assume `game_exe.parent()` is the package root. `mod_path`, `loader_exe`, and discovery of the actual XXMI installation are stronger sources for the runtime location.
 
-### 2.6 Matriks status sumber
+### 2.6 Source status matrix
 
-| Sumber                       | Kegunaan                                   | Caveat                                                              |
+| Source                       | Use                                         | Caveat                                                              |
 | ---------------------------- | ------------------------------------------ | ------------------------------------------------------------------- |
-| bo3b master/source           | Semantik upstream dan template konfigurasi | Fork XXMI membawa patch/extension sendiri                           |
-| GIMI-Package/WWMI-Package    | Kontrak package modern                     | Berubah mengikuti update package; perlu version detection           |
-| Standalone GI/SR/ZZ importer | Guides dan tools authoring                 | Sebagian deprecated/outdated; bukan selalu runtime modern           |
-| Asset repositories           | Ground truth hash/model per commit         | Hash dapat usang setelah update game; perlu commit/version metadata |
-| Leotorrez docs               | Workflow modder dan contoh sintaks         | GIMI-oriented dan mengandung penyederhanaan                         |
-| Percakapan Claude            | Hipotesis dan arah audit                   | Deep-research gagal; semua temuan perlu verifikasi ulang            |
+| bo3b master/source           | Upstream semantics and configuration templates | XXMI forks include their own patches/extensions                  |
+| GIMI-Package/WWMI-Package    | Modern package contract                    | Changes with package updates; version detection is needed           |
+| Standalone GI/SR/ZZ importer | Guides and authoring tools                  | Some are deprecated/outdated; not always a modern runtime            |
+| Asset repositories           | Per-commit ground truth for hashes/models  | Hashes may become stale after game updates; commit/version metadata is needed |
+| Leotorrez docs               | Modder workflows and syntax examples       | GIMI-oriented and includes simplifications                          |
+| Claude conversation          | Audit hypotheses and direction             | Deep research failed; all findings must be re-verified               |
 
-## 3. Mental model runtime 3Dmigoto
+## 3. 3Dmigoto runtime mental model
 
-3Dmigoto membungkus/meng-hook jalur DirectX, mengamati resource dan draw call, lalu menjalankan command list yang dikompilasi dari INI pada event seperti shader/resource match dan `Present`. Ini bukan parser INI generik: section tertentu adalah konfigurasi biasa, sedangkan `TextureOverride*`, `ShaderOverride*`, `CommandList*`, `CustomShader*`, dan beberapa section global membentuk program runtime.
+3Dmigoto wraps/hooks the DirectX path, observes resources and draw calls, and then runs command lists compiled from INI on events such as shader/resource matches and `Present`. This is not a generic INI parser: some sections are ordinary configuration, while `TextureOverride*`, `ShaderOverride*`, `CommandList*`, `CustomShader*`, and some global sections form a runtime program.
 
-Alur dasar:
+Basic flow:
 
 ```text
-d3dx.ini -> [Include] -> include file/pohon Mods -> parse + namespace
-         -> Texture/ShaderOverride cocok pada draw/resource
-         -> command list pre/post mengubah state/resource/draw
-         -> Present menjalankan pekerjaan per-frame/overlay
-         -> F10 reload_fixes + reload_config memuat perubahan runtime
+d3dx.ini -> [Include] -> include files/Mods tree -> parse + namespace
+          -> Texture/ShaderOverride matches a draw/resource
+          -> pre/post command lists change state/resource/draw
+          -> Present runs per-frame/overlay work
+          -> F10 reload_fixes + reload_config loads runtime changes
 ```
 
-Fakta konfigurasi utama dari [upstream d3dx.ini](https://github.com/bo3b/3Dmigoto/blob/master/Dependencies/d3dx.ini) dan [GIMI d3dx.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/d3dx.ini):
+Key configuration facts from [upstream d3dx.ini](https://github.com/bo3b/3Dmigoto/blob/master/Dependencies/d3dx.ini) and [GIMI d3dx.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/d3dx.ini):
 
 ```ini
 [Include]
@@ -213,34 +213,34 @@ reload_config = no_modifiers VK_F10
 analyse_frame = no_modifiers VK_F8
 ```
 
-Implikasi untuk EMMM:
+Implications for EMMM:
 
-- Disable adalah aturan filesystem yang dievaluasi saat include traversal. Rename folder adalah mutasi sumber kebenaran; DB hanya proyeksi.
-- `DISABLED*` lebih luas daripada `DISABLED `: semua nama yang dimulai kata itu dapat di-exclude oleh runtime.
-- F10 diperlukan untuk hot-load konfigurasi/INI baru. Tidak semua setting dapat direload tanpa restart.
-- Binding 3Dmigoto dipisahkan spasi, mendukung positive/negative modifiers (`ctrl`, `no_shift`, `no_modifiers`) dan nama `VK_*`; ini berbeda dari format UI global-hotkey EMMM yang memakai `Shift+F6`.
-- GIMI dan WWMI memakai F6 untuk toggle semua mod paket; F8 dipakai frame analysis. Default EMMM F6/F8 bertabrakan secara semantik.
+- Disable is a filesystem rule evaluated during include traversal. Renaming a folder mutates the source of truth; the DB is only a projection.
+- `DISABLED*` is broader than `DISABLED `: the runtime can exclude any name beginning with that word.
+- F10 is required to hot-load new configuration/INI. Not all settings can be reloaded without a restart.
+- 3Dmigoto bindings are space-delimited, support positive/negative modifiers (`ctrl`, `no_shift`, `no_modifiers`) and `VK_*` names; this differs from EMMM's global-hotkey UI format, which uses `Shift+F6`.
+- GIMI and WWMI use F6 to toggle all package mods; F8 is used for frame analysis. EMMM's default F6/F8 bindings conflict semantically.
 
-### 3.1 Taxonomy section runtime
+### 3.1 Runtime section taxonomy
 
-| Section/prefix       | Peran                                                                     | Implikasi bagi parser/editor                                                         |
+| Section/prefix       | Role                                                                      | Parser/editor implications                                                          |
 | -------------------- | ------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ |
-| `[Include]`          | Memilih file atau pohon INI tambahan dan exclusion                        | Menentukan universe file aktif; harus menjadi input discovery policy                 |
-| `[Loader]`           | Target, loader, module, elevation/launch behavior                         | Membantu menemukan package root tetapi tidak aman untuk diedit sebagai mod biasa     |
-| `[Hunting]`          | Hunting state, marking, cycle keys, F8/F10, dump options                  | Grammar binding khusus 3dmigoto, bukan `[Key*]`                                      |
-| `[Rendering]`        | Hash mode, shader/cache directories, resource tracking                    | Perubahan dapat memerlukan restart atau invalidasi cache                             |
-| `[Constants]`        | Global/persistent variables dan initialization command                    | Declaration qualifier serta ordering harus dipertahankan                             |
-| `[Key*]`             | Hold/toggle/cycle, repeated `key`, `back`, condition, command list        | One-key struct tidak cukup; multiple binding valid                                   |
-| `[TextureOverride*]` | Match resource/buffer hash dan jalankan command/draw/resource replacement | Hash umumnya 8-hex; section executable dan order-sensitive                           |
-| `[ShaderOverride*]`  | Match shader dan jalankan override/filter/command                         | Hash umumnya 16-hex; tidak boleh dipaksa ke type resource32                          |
-| `[Resource*]`        | Deklarasi buffer/texture/file/ref/data                                    | Path, format, bind flags, dan namespace penting                                      |
-| `[CommandList*]`     | Ordered executable commands dan flow control                              | Duplicate command adalah sequence, bukan conflict key                                |
-| `[CustomShader*]`    | Pipeline shader/render state custom                                       | Bisa merujuk file shader dan resource eksternal                                      |
-| `[Present]`          | Per-frame driver setelah/seputar present                                  | Beberapa included file dapat berkontribusi; ordering dan pre/post perlu runtime test |
+| `[Include]`          | Selects additional INI files/trees and exclusions                         | Defines the active file universe; must inform discovery policy                       |
+| `[Loader]`           | Target, loader, module, elevation/launch behavior                         | Helps discover the package root but is unsafe to edit as an ordinary mod            |
+| `[Hunting]`          | Hunting state, marking, cycle keys, F8/F10, dump options                  | 3dmigoto-specific binding grammar, not `[Key*]`                                     |
+| `[Rendering]`        | Hash mode, shader/cache directories, resource tracking                    | Changes may require a restart or cache invalidation                                  |
+| `[Constants]`        | Global/persistent variables and initialization commands                  | Declaration qualifiers and ordering must be preserved                                |
+| `[Key*]`             | Hold/toggle/cycle, repeated `key`, `back`, condition, command list        | A one-key struct is insufficient; multiple bindings are valid                       |
+| `[TextureOverride*]` | Matches resource/buffer hashes and runs commands/draw/resource replacement | Hash is usually 8-hex; section is executable and order-sensitive                    |
+| `[ShaderOverride*]`  | Matches shaders and runs overrides/filters/commands                       | Hash is usually 16-hex; do not force it into the resource32 type                     |
+| `[Resource*]`        | Buffer/texture/file/ref/data declarations                                 | Paths, formats, bind flags, and namespaces matter                                    |
+| `[CommandList*]`     | Ordered executable commands and flow control                              | Duplicate commands form a sequence, not a conflicting key                            |
+| `[CustomShader*]`    | Custom shader/render-state pipeline                                       | May reference external shader files and resources                                    |
+| `[Present]`          | Per-frame driver after/around present                                     | Multiple included files may contribute; ordering and pre/post need runtime testing   |
 
 ### 3.2 Grammar binding 3dmigoto
 
-Contoh nilai yang valid/umum:
+Examples of common/valid values:
 
 ```ini
 key = F6
@@ -252,68 +252,68 @@ next_marking_mode = no_modifiers VK_DECIMAL VK_NUMPAD0
 key = XB_X
 ```
 
-Parser target seharusnya menghasilkan model semantik, misalnya:
+The target parser should produce a semantic model, for example:
 
 ```text
 required modifiers   = {Ctrl, Alt}
 forbidden modifiers  = {Shift}
 main chord keys      = {F10}
 controller binding   = optional XB_*
-source spelling      = tetap disimpan untuk round-trip
+  source spelling      = preserve for round-trip
 ```
 
-`no_modifiers` bukan tombol yang perlu ditekan, melainkan shorthand constraint. `VK_` adalah prefix nama virtual key yang boleh ada atau tidak. Beberapa hunting binding membentuk chord lebih dari satu non-modifier key, sehingga fungsi “semua token kecuali terakhir adalah modifier” juga belum cukup umum.
+`no_modifiers` is not a key to press; it is shorthand for a constraint. `VK_` is an optional prefix for virtual-key names. Some hunting bindings form chords with more than one non-modifier key, so a function that treats "all tokens except the last as modifiers" is still too limited.
 
-### 3.3 Lifecycle reload dan persistence
+### 3.3 Reload and persistence lifecycle
 
-- `reload_fixes` membaca ulang shader fixes; `reload_config` membaca ulang konfigurasi/INI. Package lazimnya mengikat keduanya ke F10.
-- Persistent variables dapat ditulis ke `d3dx_user.ini`; `wipe_user_config` menghapus state tersebut lalu reload.
-- Rename folder mengubah hasil include traversal pada reload berikutnya, bukan menjamin runtime yang sudah berjalan langsung berhenti memakai command list lama.
-- Reload dapat mahal saat banyak shader/INI. GIMI modern mempunyai opsi delay/cache; EMMM perlu debounce dan status progress, bukan spam F10.
-- Beberapa setting `d3dx.ini` tidak reloadable dan tetap memerlukan restart. EMMM harus menyebut “reload requested” alih-alih menjamin semua runtime state berubah.
+- `reload_fixes` rereads shader fixes; `reload_config` rereads configuration/INI. Packages commonly bind both to F10.
+- Persistent variables can be written to `d3dx_user.ini`; `wipe_user_config` clears that state and then reloads.
+- Renaming a folder changes the result of include traversal on the next reload; it does not guarantee that an already-running runtime immediately stops using the old command list.
+- Reloading can be expensive when there are many shaders/INI files. Modern GIMI has delay/cache options; EMMM should debounce and show progress instead of spamming F10.
+- Some `d3dx.ini` settings are not reloadable and still require a restart. EMMM should say “reload requested” instead of promising that all runtime state has changed.
 
-### 3.4 Kapan sebuah mod efektif aktif
+### 3.4 When a mod is effectively enabled
 
-Sebuah child mod efektif aktif hanya jika seluruh kondisi ini benar:
+A child mod is effectively enabled only if all of these conditions are true:
 
 ```text
-folder child tidak cocok exclusion
-AND setiap ancestor sampai Mods root tidak cocok exclusion
-AND file INI termasuk oleh include policy
-AND config terbaru sudah dimuat runtime
-AND condition/variable package mengizinkan command list
+child folder does not match an exclusion
+AND every ancestor up to the Mods root does not match an exclusion
+AND the INI file is included by the include policy
+AND the runtime has loaded the latest configuration
+AND package conditions/variables allow the command list
 ```
 
-Status `mods.status = 1` hanya menjawab prefix child pada proyeksi DB. Ia belum membuktikan effective activation. Ini alasan `EffectiveEnabledResolver` perlu menjadi primitive bersama, bukan logic tambahan khusus KeyViewer.
+`mods.status = 1` only reflects the child's prefix in the DB projection. It does not prove effective activation. This is why `EffectiveEnabledResolver` should be a shared primitive, not extra logic specific to KeyViewer.
 
-## 4. Semantik INI yang harus dipertahankan
+## 4. INI semantics to preserve
 
-### 4.1 Struktur dan namespace
+### 4.1 Structure and namespaces
 
-- Nama section/property tidak peka huruf besar-kecil.
-- `namespace = ...` dapat mengubah namespace file. Referensi lintas namespace memakai bentuk seperti `Resource\GIMIv8\Text`.
-- File yang di-include dapat mempunyai namespace berdasarkan file/path; section global seperti `[Present]` dan `[Constants]` dapat berkontribusi pada runtime global/tergabung, sehingga collision dan urutan eksekusi penting.
-- Command list mengizinkan urutan perintah, repeated command, flow control `if`/`else if`/`else`/`endif`, serta fase `pre`/`post`. Model `Map<String,String>` biasa tidak cukup untuk representasi lossless.
-- Upstream mendukung beberapa `key =` pada satu `[Key*]` dan `back =` untuk reverse cycle.
-- Komentar yang aman adalah whole-line `; ...`; tutorial Leotorrez memperingatkan inline comment dapat menimbulkan error kompilasi meski syntax highlighter menerimanya.
+- Section/property names are case-insensitive.
+- `namespace = ...` can change a file's namespace. Cross-namespace references use forms such as `Resource\GIMIv8\Text`.
+- Included files can have namespaces based on file/path; global sections such as `[Present]` and `[Constants]` may contribute to a global/combined runtime, so collisions and execution order matter.
+- Command lists allow ordered commands, repeated commands, `if`/`else if`/`else`/`endif` flow control, and `pre`/`post` phases. A plain `Map<String,String>` is not sufficient for lossless representation.
+- Upstream supports multiple `key =` entries in one `[Key*]` and `back =` for reverse cycling.
+- Whole-line `; ...` comments are safe; the Leotorrez tutorial warns that inline comments can cause compilation errors even if a syntax highlighter accepts them.
 
-### 4.2 Hash dan resource
+### 4.2 Hashes and resources
 
-- Hash shader lazimnya 16 hex/64-bit, misalnya `root_vs = 653c63ba4a73ca8b`.
-- Hash buffer/texture lazimnya 8 hex/32-bit, misalnya `ib = 0d7dc936` atau texture `9bd05da3`.
-- Contoh [Albedo `hash.json`](https://raw.githubusercontent.com/SilentNightSound/GI-Model-Importer-Assets/main/PlayerCharacterData/Albedo/hash.json) menyimpan `root_vs`, draw/position/blend/texcoord VB, IB, index/classification, dan texture hashes per component.
-- `TextureOverride` tidak identik dengan “texture file saja”; pada importer, IB/VB juga sering dicocokkan melalui mekanisme resource override.
-- `filename` resource harus diperlakukan relatif terhadap konteks file INI/package yang memuatnya; kontrak path harus dites dengan file yang benar-benar diletakkan pada posisi produksi.
+- Shader hashes are usually 16 hex/64-bit, e.g. `root_vs = 653c63ba4a73ca8b`.
+- Buffer/texture hashes are usually 8 hex/32-bit, e.g. `ib = 0d7dc936` or texture `9bd05da3`.
+- The [Albedo `hash.json`](https://raw.githubusercontent.com/SilentNightSound/GI-Model-Importer-Assets/main/PlayerCharacterData/Albedo/hash.json) example stores `root_vs`, draw/position/blend/texcoord VB, IB, index/classification, and per-component texture hashes.
+- `TextureOverride` does not mean “texture file only”; importers also often match IB/VB through resource override mechanisms.
+- A resource `filename` should be treated as relative to the context of the INI/package file that contains it; test the path contract with a file placed at its actual production location.
 
-Upstream resolver mencoba path relatif terhadap namespace/config file terlebih dahulu, lalu fallback relatif terhadap root 3dmigoto. Dua bentuk path dapat sama-sama terlihat bekerja tetapi melalui branch resolution berbeda. EMMM sebaiknya memilih satu kontrak eksplisit dan tidak bergantung pada fallback terselubung.
+The upstream resolver first tries a path relative to the namespace/config file, then falls back to a path relative to the 3dmigoto root. Two path forms may both appear to work while using different resolution branches. EMMM should choose one explicit contract and not depend on implicit fallback behavior.
 
-### 4.2.1 Match tidak cukup dinilai dari hash saja
+### 4.2.1 A hash alone is not enough to judge a match
 
-`TextureOverride*` dapat mempersempit match dengan `match_first_index`, first vertex/instance, count, format/dimension/resource description, condition, dan `match_priority`. Dua section dengan hash sama belum tentu konflik bila draw context berbeda. Sebaliknya satu hash shared yang dipakai tanpa context dapat mengaktifkan KeyViewer untuk object yang salah.
+`TextureOverride*` can narrow a match with `match_first_index`, first vertex/instance, count, format/dimension/resource description, condition, and `match_priority`. Two sections with the same hash are not necessarily in conflict if their draw contexts differ. Conversely, a shared hash used without context can activate KeyViewer for the wrong object.
 
-`ShaderOverride*` dan `ShaderRegex*` juga dapat mengaktifkan `checktextureoverride` pada slot tertentu (`ps-t0`, `vb0`, `ib`). Karena itu “hash muncul di INI” tidak selalu berarti runtime mengevaluasi hash tersebut pada semua draw.
+`ShaderOverride*` and `ShaderRegex*` can also enable `checktextureoverride` on specific slots (`ps-t0`, `vb0`, `ib`). Therefore, “the hash appears in the INI” does not always mean the runtime evaluates that hash on every draw.
 
-Kontrak evidence yang lebih kuat untuk MasterDB/KeyViewer:
+Stronger evidence contract for MasterDB/KeyViewer:
 
 ```text
 game + package version
@@ -322,13 +322,13 @@ hash type/width
 override section type
 draw/resource context
 source file/namespace
-first-index atau constraints lain
+first-index or other constraints
 confidence/provenance
 ```
 
-### 4.3 Overlay text pada GIMI modern
+### 4.3 Text overlay in modern GIMI
 
-[GIMI API.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/API.ini) menetapkan API yang didukung:
+[GIMI API.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/API.ini) defines the supported API:
 
 ```ini
 Resource\GIMIv8\Text = ref ResourceMyText
@@ -336,51 +336,51 @@ Resource\GIMIv8\TextParams = ref ResourceMyTextParams
 run = CommandList\GIMIv8\PrintText
 ```
 
-[GIMI help.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/help.ini) adalah compatibility layer deprecated. `CustomShaderFormatText` hanya dummy; rendering aktualnya meneruskan resource ke `CommandList\GIMIv8\PrintText`. Karena WWMI memakai namespace `WWMIv1`, EMMM membutuhkan adapter/capability per game/package, bukan hardcode GIMI.
+[GIMI help.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/help.ini) is a deprecated compatibility layer. `CustomShaderFormatText` is only a dummy; actual rendering forwards the resource to `CommandList\GIMIv8\PrintText`. Because WWMI uses the `WWMIv1` namespace, EMMM needs an adapter/capability per game/package instead of hardcoding GIMI.
 
-## 5. Hunting, texture, dan shader workflow
+## 5. Hunting, texture, and shader workflows
 
-Sumber: [Hunting](https://leotorrez.github.io/modding/guides/hunting), [Textures 101](https://leotorrez.github.io/modding/guides/textures-101), dan [Shaders 101](https://leotorrez.github.io/modding/guides/shaders-101).
+Sources: [Hunting](https://leotorrez.github.io/modding/guides/hunting), [Textures 101](https://leotorrez.github.io/modding/guides/textures-101), and [Shaders 101](https://leotorrez.github.io/modding/guides/shaders-101).
 
-1. Aktifkan hunting sebelum launch; untuk shader editing aktifkan dump shader.
-2. Nonaktifkan mod yang dapat mengganggu target. F6 adalah toggle paket, tetapi shader tertentu dapat tetap aktif; rename ancestor dengan `DISABLED` lebih kuat.
+1. Enable hunting before launch; enable shader dumps for shader editing.
+2. Disable mods that could interfere with the target. F6 toggles the package, but some shaders may remain active; renaming an ancestor with `DISABLED` is stronger.
 3. Numpad 0 mengaktifkan hunting; cycle VS/PS/IB/VB/CS lalu mark/copy hash.
-4. F8 membuat frame analysis. Dump global dapat berukuran sangat besar; targetkan resource melalui override/dump command bila memungkinkan.
-5. `gui_collect` mengubah dump menjadi IB/VB/texture plus `hash.json`, kemudian Blender importer/exporter membentuk resource dan INI mod.
-6. Texture replacement harus mempertahankan format/color space yang sesuai. Shader replacement memakai hash 16-hex, file replacement, resource slots, dan dapat menerima IniParams/time dari INI.
-7. Hash shader lebih sering berubah setelah update game daripada beberapa hash model/resource; database dan matcher perlu versioning/provenance.
+4. F8 creates a frame analysis. Global dumps can be very large; target resources through overrides/dump commands when possible.
+5. `gui_collect` converts dumps into IB/VB/texture plus `hash.json`, then the Blender importer/exporter creates mod resources and INI.
+6. Texture replacements must preserve the appropriate format/color space. Shader replacements use 16-hex hashes and replacement files/resource slots, and can receive IniParams/time from the INI.
+7. Shader hashes change after game updates more often than some model/resource hashes; the database and matcher need versioning/provenance.
 
-## 6. Implementasi EMMM saat ini
+## 6. Current EMMM implementation
 
 ### 6.1 INI Reader/Formatter
 
-- [`document.rs`](../src-tauri/src/services/ini/document.rs) menemukan INI secara rekursif dan deterministik, mengecualikan `desktop.ini` serta subtree `DISABLED*`, dan tidak mengikuti symlink.
-- [`encoding.rs`](../src-tauri/src/services/ini/encoding.rs) mempertahankan encoding asal, BOM, terminator per baris (`LF`, `CRLF`, `CR`, atau none), dan final-newline state.
-- Structured view adalah index di atas raw lines. Ia mengenali qualifier `global`, `persist`, dan `local`, mempertahankan ejaan section, serta menyimpan repeated `key`/`back` dalam urutan source.
-- Input lossy dapat dibaca sebagai raw fallback, tetapi tidak boleh disimpan karena bytes asal tidak dapat direkonstruksi dengan aman.
+- [`document.rs`](../src-tauri/src/services/ini/document.rs) discovers INI files recursively and deterministically, excludes `desktop.ini` and `DISABLED*` subtrees, and does not follow symlinks.
+- [`encoding.rs`](../src-tauri/src/services/ini/encoding.rs) preserves the original encoding, BOM, per-line terminators (`LF`, `CRLF`, `CR`, or none), and final-newline state.
+- The structured view is an index over raw lines. It recognizes `global`, `persist`, and `local` qualifiers, preserves section spelling, and stores repeated `key`/`back` entries in source order.
+- Lossy input can be read as a raw fallback, but must not be saved because the original bytes cannot be safely reconstructed.
 
 ### 6.2 INI Writer
 
-- [`write.rs`](../src-tauri/src/services/ini/write.rs) memvalidasi seluruh update sebelum side effect, lalu membandingkan BLAKE3 source fingerprint dengan bytes terbaru di disk.
-- Writer mempertahankan encoding/BOM/terminator asal dan menolak karakter yang tidak representable pada Shift-JIS.
-- Commit memakai unique sibling temp, recovery rename, auto-restore pada kegagalan replace, dan rotasi tiga generasi backup.
-- Command write berjalan di bawah `OperationLock`; external edit setelah read menghasilkan stale-write error, bukan overwrite.
+- [`write.rs`](../src-tauri/src/services/ini/write.rs) validates all updates before side effects, then compares the BLAKE3 source fingerprint with the latest bytes on disk.
+- The writer preserves the original encoding/BOM/terminators and rejects characters that cannot be represented in Shift-JIS.
+- Commit uses a unique sibling temp file, recovery rename, automatic restore on replacement failure, and three-generation backup rotation.
+- The write command runs under `OperationLock`; an external edit after reading produces a stale-write error instead of an overwrite.
 
 ### 6.3 KeyViewer
 
-- [`post_apply.rs`](../src-tauri/src/services/app/post_apply.rs) memakai effective-enabled paths, memanen nested INI satu pass, mencocokkan object, lalu membangun artifact di staging sebelum directory swap.
-- [`harvester.rs`](../src-tauri/src/services/keyviewer/harvester.rs) hanya memasukkan hash resource 8-hex dari `TextureOverride*` ke matcher. Shader hash 16-hex ditangani conflict scanner sebagai tipe berbeda.
-- [`matcher.rs`](../src-tauri/src/services/keyviewer/matcher.rs) mendeduplikasi evidence, memakai threshold konservatif, dan hanya menghasilkan artifact bila sentinel unik terhadap semua object result.
-- [`generator/ini.rs`](../src-tauri/src/services/keyviewer/generator/ini.rs) memakai text API resmi per package: `GIMIv8`, `SRMIv1`, `WWMIv1`, atau `ZZMIv1`. EFMI ditolak eksplisit sampai API resmi terverifikasi.
-- Seluruh resource path ditulis relatif terhadap `.emmm_data/KeyViewer.ini` melalui satu direktori stabil: `generations/status/...` dan `generations/keybinds/active/...`. Tidak ada subfolder generasi versi yang ikut dibaca 3DMigoto.
+- [`post_apply.rs`](../src-tauri/src/services/app/post_apply.rs) uses effectively enabled paths, harvests nested INI files in one pass, matches objects, and then builds the artifact in staging before swapping the directory.
+- [`harvester.rs`](../src-tauri/src/services/keyviewer/harvester.rs) only feeds 8-hex resource hashes from `TextureOverride*` into the matcher. The conflict scanner handles 16-hex shader hashes as a different type.
+- [`matcher.rs`](../src-tauri/src/services/keyviewer/matcher.rs) deduplicates evidence, uses a conservative threshold, and only produces an artifact when the sentinel is unique across all object results.
+- [`generator/ini.rs`](../src-tauri/src/services/keyviewer/generator/ini.rs) uses each package's official text API: `GIMIv8`, `SRMIv1`, `WWMIv1`, or `ZZMIv1`. EFMI is explicitly rejected until its official API is verified.
+- All resource paths are written relative to `.emmm_data/KeyViewer.ini` through one stable directory: `generations/status/...` and `generations/keybinds/active/...`. No versioned generation subfolders are read by 3DMigoto.
 
 ### 6.4 Switch mod
 
-- [`core_ops/toggle.rs`](../src-tauri/src/services/mods/core_ops/toggle.rs) dan [`runtime_mutation_engine.rs`](../src-tauri/src/services/runtime_mutation_engine.rs) melakukan rename filesystem dengan collision check, lock/suppression, batch plan, dan rollback.
-- [`workspace_switch_service.rs`](../src-tauri/src/services/workspace_switch_service.rs) memisahkan object-root switch dari mod switch dan menjalankan scoped disk reconcile.
-- Bila rollback tidak lengkap, collection pipeline menjalankan full disk reconcile dan menyimpan recovery warning pada progress state.
-- UI switch melaporkan **disk applied, reload required** dan menampilkan reload key hasil discovery. Cycle preset in-game baru melaporkan reload setelah key-send berhasil.
-- Default EMMM adalah `Ctrl+F6` dan `Ctrl+F8`; F6/F8 tanpa modifier tetap dimiliki package/3DMigoto.
+- [`core_ops/toggle.rs`](../src-tauri/src/services/mods/core_ops/toggle.rs) and [`runtime_mutation_engine.rs`](../src-tauri/src/services/runtime_mutation_engine.rs) perform filesystem renames with collision checks, locking/suppression, batch plans, and rollback.
+- [`workspace_switch_service.rs`](../src-tauri/src/services/workspace_switch_service.rs) separates object-root switching from mod switching and runs scoped disk reconciliation.
+- If rollback is incomplete, the collection pipeline runs a full disk reconciliation and stores a recovery warning in progress state.
+- UI switching reports **disk applied, reload required** and shows the discovered reload key. In-game preset cycling reports a reload only after key-send succeeds.
+- EMMM defaults to `Ctrl+F6` and `Ctrl+F8`; F6/F8 without modifiers remain owned by the package/3DMigoto.
 
 ### 6.5 Call flow Reader -> Editor -> Writer
 
@@ -390,38 +390,38 @@ mod path
   -> read_ini_document
        -> metadata size guard 2 MiB
        -> read bytes
-       -> detect UTF-8/BOM, Shift-JIS, atau lossy fallback
-       -> split raw_lines sambil menyimpan terminator per baris
-       -> parse qualified variables dan repeated [Key*] key/back
-       -> hitung source fingerprint
-  -> frontend membuat line_updates
+        -> detect UTF-8/BOM, Shift-JIS, or lossy fallback
+        -> split raw_lines while preserving each line terminator
+        -> parse qualified variables and repeated [Key*] key/back
+        -> calculate source fingerprint
+   -> frontend creates line_updates
   -> save_ini_with_updates
-       -> validasi seluruh update dan reject RawFallback
-       -> re-read target dan cocokkan fingerprint
+        -> validate all updates and reject RawFallback
+        -> re-read target and compare fingerprint
        -> patch cached raw_lines by index
-       -> encode memakai encoding/BOM/terminator asal
+        -> encode using the original encoding/BOM/terminators
        -> rotate backup + write unique temp + sync
-       -> recoverable replace; auto-restore bila commit gagal
+        -> recoverable replace; auto-restore if commit fails
 ```
 
-Invariant yang wajib dipertahankan:
+Invariants that must be preserved:
 
-- raw lines menjadi sumber rendering ulang, bukan serializer dari structured fields;
-- save ditolak bila decode tidak dipercaya atau source sudah berubah;
-- targeted edit tidak mengubah encoding, terminator, BOM, atau baris lain;
-- semua update valid sebelum backup/temp dibuat;
-- target asli atau recovery yang jelas selalu tersedia bila replace gagal.
+- raw lines remain the source for rerendering, not a serializer over structured fields;
+- saving is rejected if decoding is not trusted or the source has changed;
+- a targeted edit does not alter encoding, terminators, BOM, or other lines;
+- all updates are validated before a backup/temp file is created;
+- the original target or a clear recovery option is always available if replacement fails.
 
 ### 6.6 Call flow mutation -> reconcile -> overlay
 
 ```text
 UI/workspace/collection/hotkey mutation
   -> operation lock + watcher suppression
-  -> rename folder(s) di disk
+   -> rename folder(s) on disk
   -> scoped disk reconcile
        -> scan/classify disk
        -> settle object/mod rows + runtime projection
-       -> collection dirty-state bila perlu
+        -> collection dirty-state if needed
        -> trigger_overlay_refresh_for_game
             -> rebuild projection
             -> query enabled child rows
@@ -429,35 +429,35 @@ UI/workspace/collection/hotkey mutation
             -> hash/keybind harvest
             -> DB object/hash match
             -> KeyViewer.ini + text + status
-  -> caller menginformasikan reload key atau hotkey path mereplay key
+   -> caller reports the reload key or the hotkey path replays the key
 ```
 
-Design yang matang di alur ini:
+The flow has these mature design elements:
 
-- disk diposisikan sebagai source of truth;
-- object-root switch dipisahkan dari mod-level switch;
-- operation lock dan watcher suppression mengurangi race/feedback loop;
-- batch mutation direncanakan sebelum rename dan memiliki rollback + full-reconcile recovery;
-- reconcile menjadi single writer DB setelah filesystem berubah;
-- effective-enabled query digunakan setelah projection settle;
-- runtime artifact dibangun di staging dan baru ditukar setelah valid.
+- disk is treated as the source of truth;
+- object-root switching is separated from mod-level switching;
+- operation lock and watcher suppression reduce race conditions/feedback loops;
+- batch mutations are planned before renaming and have rollback + full-reconciliation recovery;
+- reconciliation becomes the single DB writer after the filesystem changes;
+- the effectively-enabled query is used after the projection settles;
+- runtime artifacts are built in staging and swapped only after validation.
 
-Boundary yang tetap harus dipahami:
+Boundaries that still need to be understood:
 
-- keberhasilan rename/reconcile/artifact tidak berarti game sudah reload;
-- UI-driven mutation hanya boleh menampilkan `ReloadRequired`, karena fokus game tidak terjamin;
-- hotkey in-game boleh menampilkan `RuntimeReloaded` hanya setelah input replay sukses;
-- artifact error sesudah disk mutation adalah degraded completion, bukan alasan mengklaim disk rollback.
+- successful rename/reconciliation/artifact generation does not mean the game has reloaded;
+- UI-driven mutations may only show `ReloadRequired`, because game focus is not guaranteed;
+- an in-game hotkey may show `RuntimeReloaded` only after input replay succeeds;
+- an artifact error after a disk mutation is degraded completion, not grounds to claim that the disk was rolled back.
 
-### 6.7 Call flow KeyViewer secara detail
+### 6.7 KeyViewer call flow in detail
 
 ```text
 get_enabled_mods_paths
-  -> filter status=enabled + tidak ada component DISABLED*
-  -> untuk setiap mod: list nested INI
-  -> decode sekali
+   -> filter status=enabled + no DISABLED* component
+   -> for each mod: list nested INI
+   -> decode once
   -> harvest TextureOverride resource hash 8-hex
-  -> parse seluruh repeated [Key*]
+   -> parse all repeated [Key*] entries
   -> occurrence_counts + hash_to_mod_path
   -> get_kv_matching_objects
   -> dedupe skin/code hashes
@@ -466,47 +466,47 @@ get_enabled_mods_paths
        -> intersection + score
        -> threshold filter
        -> wajibkan sentinel unik; drop ambiguity
-  -> render API text berdasarkan GameType
-  -> map sentinel kembali ke source mod keybinds
-  -> stage keybind text + status + KeyViewer.ini
-  -> directory/file atomic replace
+   -> render API text based on GameType
+   -> map sentinels back to source mod keybinds
+   -> stage keybind text + status + KeyViewer.ini
+   -> atomic directory/file replacement
 ```
 
-Aturan diagnosis:
+Diagnostic rules:
 
-- satu base hash tidak cukup untuk menerima match;
-- duplicate evidence tidak boleh menaikkan score;
-- shared sentinel tidak boleh menghasilkan dua TextureOverride artifact;
-- ShaderOverride 16-hex tidak boleh dipaksa masuk resource matcher;
-- kegagalan create/write/replace/cleanup harus terlihat sebagai error atau warning degraded;
-- EFMI harus dianggap unsupported, bukan diam-diam memakai namespace package lain.
+- one base hash is not enough to accept a match;
+- duplicate evidence must not raise the score;
+- a shared sentinel must not produce two TextureOverride artifacts;
+- a 16-hex ShaderOverride must not be forced into the resource matcher;
+- create/write/replace/cleanup failures must be visible as errors or degraded warnings;
+- EFMI must be treated as unsupported, not silently assigned another package's namespace.
 
 ### 6.8 Hotkey ownership
 
-Ada tiga domain hotkey yang harus dipisahkan:
+Three hotkey domains must be kept separate:
 
-1. Global OS hotkey milik EMMM, diregister oleh Tauri dan ditulis user sebagai `Shift+F6`.
-2. Key section di mod/paket, diproses 3dmigoto ketika game foreground dan ditulis `no_modifiers F6`.
-3. Hunting key di `[Hunting]`, bukan `[Key*]`, dengan chord/negative modifier dan aksi engine seperti reload/frame analysis.
+1. EMMM's global OS hotkey, registered by Tauri and entered by the user as `Shift+F6`.
+2. A key section in a mod/package, processed by 3dmigoto while the game is foreground and written as `no_modifiers F6`.
+3. A hunting key in `[Hunting]`, not `[Key*]`, with chords/negative modifiers and engine actions such as reload/frame analysis.
 
-Validator settings membandingkan semua action EMMM, reserved F6/F8 package bindings, dan reload key hasil discovery dari `[Hunting]`. Binding tersimpan milik user tidak dimigrasi diam-diam; perubahan default hanya berlaku pada konfigurasi baru atau aksi reset.
+The settings validator compares all EMMM actions, reserved package bindings F6/F8, and the reload key discovered from `[Hunting]`. Saved user bindings are not silently migrated; default changes only apply to new configurations or after a reset action.
 
-## 7. Panduan verifikasi dan regression minimum
+## 7. Minimum verification and regression guide
 
-Gunakan matriks berikut saat mengubah parser, writer, profile runtime, KeyViewer, conflict engine, atau alur switch. Detail status implementasi dan pekerjaan validasi yang masih terbuka berada di [`3dmigoto_gap_status.md`](./3dmigoto_gap_status.md).
+Use the following matrix when changing the parser, writer, runtime profile, KeyViewer, conflict engine, or switching flow. Implementation status details and outstanding validation work are in [`3dmigoto_gap_status.md`](./3dmigoto_gap_status.md).
 
-- Fixture nested mod dengan UTF-8 BOM, Shift-JIS, CRLF/LF campuran, final/no-final newline, repeated key/back, qualified variables, flow control, dan non-ASCII section.
-- Golden round-trip: no-op save menghasilkan bytes identik; targeted save hanya mengubah token yang diminta.
-- Stale-write test: file diubah eksternal sesudah read harus menghasilkan conflict, bukan overwrite.
-- Failure injection: temp write, replace, backup, dan rollback failure selalu meninggalkan original atau backup yang dapat dipulihkan.
-- Package matrix GIMI/WWMI/SRMI/ZZMI: lokasi config, namespace text, F6/F8/F10/F12, relative resource path, dan reload grammar.
-- Effective-enabled matrix untuk disabled prefix pada setiap ancestor dan variasi legacy/case.
-- Matcher fixtures dari asset repositories: shared texture, duplicate skin hashes, shader64/resource32, zero sentinel, dan ambiguous sentinel.
-- In-game smoke: toggle mod/object/preset, F10, camera pan, character swap, safe mode, status fallback, dan overlay off tidak meninggalkan notification stale.
+- Nested-mod fixtures with UTF-8 BOM, Shift-JIS, mixed CRLF/LF, final/no-final newline, repeated key/back, qualified variables, flow control, and non-ASCII sections.
+- Golden round-trip: a no-op save produces identical bytes; a targeted save changes only the requested token.
+- Stale-write test: a file changed externally after reading must produce a conflict, not an overwrite.
+- Failure injection: temp write, replacement, backup, and rollback failures always leave the original or a recoverable backup.
+- GIMI/WWMI/SRMI/ZZMI package matrix: config locations, text namespaces, F6/F8/F10/F12, relative resource paths, and reload grammar.
+- Effective-enabled matrix for disabled prefixes on every ancestor and legacy/case variants.
+- Matcher fixtures from asset repositories: shared textures, duplicate skin hashes, shader64/resource32, zero sentinel, and ambiguous sentinel.
+- In-game smoke test: toggling mods/objects/presets, F10, camera pan, character swap, safe mode, status fallback, and turning the overlay off must not leave stale notifications.
 
-### 7.1 Snapshot repository yang diperiksa
+### 7.1 Repository snapshots reviewed
 
-Commit ini dicatat agar klaim dapat direproduksi dan diperbarui tanpa mengandalkan “latest” yang bergerak:
+These commits are recorded so claims can be reproduced and updated without relying on a moving “latest” reference:
 
 | Repository                                  | Branch   | Commit snapshot                            |
 | ------------------------------------------- | -------- | ------------------------------------------ |
@@ -521,13 +521,13 @@ Commit ini dicatat agar klaim dapat direproduksi dan diperbarui tanpa mengandalk
 | `leotorrez/ZZ-Model-Importer`               | `main`   | `4fb37188b8f1b509e0bfcef877b236a8ade6e4d4` |
 | `SpectrumQT/XXMI-Launcher`                  | `main`   | `d56786b8dacb00c35204bff45ff5b8b83bd8962a` |
 
-Catatan ecosystem freshness: XXMI Launcher saat ini menunjuk package SRMI/ZZMI modern yang berbeda dari repository standalone lama pada daftar awal (`SpectrumQT/SRMI-Package` dan `leotorrez/ZZMI-Package`). Repository lama tetap berguna untuk guides/tools, tetapi profile runtime produksi harus mengikuti package yang benar-benar dipasang launcher.
+Ecosystem freshness note: XXMI Launcher currently points to modern SRMI/ZZMI packages that differ from the older standalone repositories in the initial list (`SpectrumQT/SRMI-Package` and `leotorrez/ZZMI-Package`). The older repositories remain useful for guides/tools, but production runtime profiles must follow the package actually installed by the launcher.
 
-## 8. Referensi primer
+## 8. Primary references
 
-- [bo3b/3Dmigoto](https://github.com/bo3b/3Dmigoto) dan [Dependencies/d3dx.ini](https://github.com/bo3b/3Dmigoto/blob/master/Dependencies/d3dx.ini)
-- [GIMI-Package](https://github.com/SilentNightSound/GIMI-Package), [d3dx.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/d3dx.ini), [API.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/API.ini), [help.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/help.ini), dan [KeyBindings.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/KeyBindings.ini)
-- [WWMI-Package](https://github.com/SpectrumQT/WWMI-Package) dan [WWMI KeyBindings.ini](https://raw.githubusercontent.com/SpectrumQT/WWMI-Package/main/WWMI/Core/WWMI/KeyBindings.ini)
-- [GI-Model-Importer](https://github.com/SilentNightSound/GI-Model-Importer), [GI assets](https://github.com/SilentNightSound/GI-Model-Importer-Assets), [SR importer](https://github.com/SilentNightSound/SR-Model-Importer), dan [SR assets](https://github.com/SilentNightSound/SR-Model-Importer-Assets)
-- [ZZ-Model-Importer](https://github.com/leotorrez/ZZ-Model-Importer), [XXMI-Launcher](https://github.com/SpectrumQT/XXMI-Launcher), dan [rayshire mirror](https://github.com/rayshire/3dmigoto)
-- [Leotorrez INI docs](https://leotorrez.github.io/modding/docs/), [Hunting](https://leotorrez.github.io/modding/guides/hunting), [Textures 101](https://leotorrez.github.io/modding/guides/textures-101), dan [Shaders 101](https://leotorrez.github.io/modding/guides/shaders-101)
+- [bo3b/3Dmigoto](https://github.com/bo3b/3Dmigoto) and [Dependencies/d3dx.ini](https://github.com/bo3b/3Dmigoto/blob/master/Dependencies/d3dx.ini)
+- [GIMI-Package](https://github.com/SilentNightSound/GIMI-Package), [d3dx.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/d3dx.ini), [API.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/API.ini), [help.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/help.ini), and [KeyBindings.ini](https://raw.githubusercontent.com/SilentNightSound/GIMI-Package/main/GIMI/Core/GIMI/KeyBindings.ini)
+- [WWMI-Package](https://github.com/SpectrumQT/WWMI-Package) and [WWMI KeyBindings.ini](https://raw.githubusercontent.com/SpectrumQT/WWMI-Package/main/WWMI/Core/WWMI/KeyBindings.ini)
+- [GI-Model-Importer](https://github.com/SilentNightSound/GI-Model-Importer), [GI assets](https://github.com/SilentNightSound/GI-Model-Importer-Assets), [SR importer](https://github.com/SilentNightSound/SR-Model-Importer), and [SR assets](https://github.com/SilentNightSound/SR-Model-Importer-Assets)
+- [ZZ-Model-Importer](https://github.com/leotorrez/ZZ-Model-Importer), [XXMI-Launcher](https://github.com/SpectrumQT/XXMI-Launcher), and [rayshire mirror](https://github.com/rayshire/3dmigoto)
+- [Leotorrez INI docs](https://leotorrez.github.io/modding/docs/), [Hunting](https://leotorrez.github.io/modding/guides/hunting), [Textures 101](https://leotorrez.github.io/modding/guides/textures-101), and [Shaders 101](https://leotorrez.github.io/modding/guides/shaders-101)

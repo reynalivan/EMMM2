@@ -106,20 +106,20 @@ pub async fn clear_last_changes(pool: &SqlitePool, game_id: &str) -> Result<(), 
         .and_then(|value| value.draft_collection_id);
     collection::runtime::clear_draft_tx(&mut tx, game_id).await?;
     if let Some(draft_id) = draft_id {
-        ensure_rollback_draft_is_unreferenced(&mut tx, &draft_id).await?;
+        ensure_rollback_collection_is_unreferenced(&mut tx, &draft_id).await?;
         collection::delete_tx(&mut tx, &draft_id).await?;
     }
     tx.commit().await?;
     Ok(())
 }
 
-pub(crate) async fn ensure_rollback_draft_is_unreferenced(
+pub(crate) async fn ensure_rollback_collection_is_unreferenced(
     conn: &mut sqlx::SqliteConnection,
-    draft_id: &str,
+    collection_id: &str,
 ) -> Result<(), CollectionError> {
-    if crate::modules::workspace::adapters::sqlite::task::open_task_references_rollback_collection_tx(conn, draft_id).await? {
+    if crate::modules::workspace::adapters::sqlite::task::open_task_references_rollback_collection_tx(conn, collection_id).await? {
         return Err(CollectionError::Validation(
-            "Last changes is required by an open recovery task; resolve recovery before clearing or saving it"
+            "Collection snapshot is required by an open recovery task; resolve recovery before changing it"
                 .to_string(),
         ));
     }

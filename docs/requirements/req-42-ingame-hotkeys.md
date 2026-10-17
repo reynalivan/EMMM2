@@ -1,28 +1,29 @@
 # Epic 42: In-Game Hotkeys & Live Controls
 
-> **Status kontrak: menggantikan bagian historis di bawah.** Hanya tiga
-> hotkey OS yang didaftarkan: Safe Mode `F5`, Previous Preset `Shift+F5`, dan
-> Next Preset `Ctrl+F5`. `F7` dimiliki 3DMigoto melalui `type = cycle` dan
-> `global persist`; EMMM tidak boleh mendaftarkannya sebagai global shortcut.
-> Binding ini didaftarkan ke OS saat startup; ia tetap terbaca ketika jendela
-> EMMM tidak fokus atau diminimalkan, selama game aktif berada di foreground.
-> Tidak ada variant action, duration, atau opsi focus. Cooldown 500 ms hanya
-> berlaku untuk mutasi Safe/preset. Setelah perubahan INI atau resource, EMMM
-> menemukan binding efektif `reload_config`, memeriksa proses game foreground,
-> lalu mengirim input hanya bila tombol pemicu sudah dilepas. Tanpa binding atau
-> focus yang aman hasilnya `NeedsManualReload`, bukan fallback F10 dan bukan
-> klaim bahwa reload sudah diterima game.
+> **Contract status: replaces the historical section below.** Only three OS
+> hotkeys are registered: Safe Mode `F5`, Previous Preset `Shift+F5`, and Next
+> Preset `Ctrl+F5`. `F7` belongs to 3DMigoto through `type = cycle` and
+> `global persist`; EMMM must not register it as a global shortcut. These
+> bindings are registered with the OS at startup; they remain detectable when
+> the EMMM window is unfocused or minimized, as long as the active game is in
+> the foreground. There are no variant actions, duration, or focus options. The
+> 500 ms cooldown applies only to Safe/preset mutations. After an INI or
+> resource change, EMMM finds the effective `reload_config` binding, checks
+> that the game process is in the foreground, then sends input only after the
+> trigger key has been released. Without a binding or safe focus, the result is
+> `NeedsManualReload`, not an F10 fallback or a claim that the game accepted the
+> reload.
 >
-> Safe Mode merupakan keputusan runtime per game: hanya mod terkelola yang
-> berklasifikasi Safe boleh efektif ketika ON; Unknown dan Unsafe tidak
-> eligible. Mutasi folder harus berhasil lebih dahulu sebelum status Safe
-> committed dipublikasikan. Kegagalan sinkronisasi sesudah mutasi dilaporkan
-> sebagai committed dengan sync tertunda, bukan rollback.
+> Safe Mode is a per-game runtime decision: only managed mods classified as
+> Safe may be effective when ON; Unknown and Unsafe mods are ineligible. The
+> folder mutation must succeed before the committed Safe status is published.
+> A synchronization failure after the mutation is reported as committed with
+> synchronization pending, not rolled back.
 >
-> Status unified menggunakan snapshot generation immutable dan berbunyi
-> `Safe: On [F5] | Preset: Maid Pack [SHIFT+F5] [CTRL+F5]`. Teks lama di
-> bawah dipertahankan sebagai sejarah audit dan tidak menjadi acceptance
-> criteria implementasi baru.
+> Unified status uses an immutable generation snapshot and reads
+> `Safe: On [F5] | Preset: Maid Pack [SHIFT+F5] [CTRL+F5]`. The old text below
+> is retained as audit history and is not an acceptance criterion for the new
+> implementation.
 
 ## 1. Executive Summary
 

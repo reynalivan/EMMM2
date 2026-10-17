@@ -136,11 +136,7 @@ function ActionTile({
       id={id}
       onClick={onClick}
       disabled={disabled}
-      className={`group flex h-full w-full cursor-pointer items-center gap-3 rounded-2xl border px-4 py-3 transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-col sm:gap-2.5 sm:px-3 sm:py-5 ${
-        emphasis
-          ? 'border-base-300 bg-base-200/60 hover:border-base-content/15 hover:bg-base-300/60'
-          : 'border-base-300 bg-base-200/60 hover:bg-base-300/60 hover:border-base-content/15'
-      }`}
+      className="group flex h-full w-full cursor-pointer items-center gap-3 rounded-2xl border border-base-300 bg-base-200/60 px-4 py-3 transition-colors duration-150 hover:border-base-content/15 hover:bg-base-300/60 disabled:cursor-not-allowed disabled:opacity-40 sm:flex-col sm:gap-2.5 sm:px-3 sm:py-5"
     >
       <span
         className={`w-12 h-12 rounded-xl flex items-center justify-center transition-colors duration-150 ${

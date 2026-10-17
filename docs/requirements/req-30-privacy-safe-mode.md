@@ -1,6 +1,6 @@
 # Epic 30: Privacy & Safe Mode (Lightweight View Filter)
 
-> **[2026-08-29] Catatan arsitektur:** Desain "Dual Corridor Handoff" (fisik mematikan folder unsafe via prefix `DISABLED `) dan PIN lock/boot guard **telah dibatalkan**. Arsitektur dirombak menjadi jauh lebih ringan: Safe Mode kini murni beroperasi sebagai **View Filter (UI Masking)** dan **Collection Tagging** (Koleksi dapat berisi tag/mods unsafe).
+> **[2026-08-29] Architecture note:** The "Dual Corridor Handoff" design (physically disabling unsafe folders with the `DISABLED ` prefix) and PIN lock/boot guard **have been cancelled**. The architecture has been reworked into a much lighter design: Safe Mode now operates solely as a **View Filter (UI Masking)** and **Collection Tagging** (collections may contain unsafe tags/mods).
 
 ## 1. Executive Summary
 

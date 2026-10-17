@@ -132,6 +132,7 @@ pub async fn prepare_durable_batch(
     game_id: &str,
     db: &SqlitePool,
 ) -> Result<DurableResolutionBatch, AppError> {
+    validate_batch_choices(&requests).map_err(|error| AppError::Validation(error.to_string()))?;
     validate_ignore_group_coverage(&requests, game_id, db)
         .await
         .map_err(|error| AppError::Validation(error.to_string()))?;
@@ -421,6 +422,35 @@ async fn mark_group_ignored_after_last_pair(
         set_group_status(db, group_id, "ignored").await?;
     }
 
+    Ok(())
+}
+
+fn validate_batch_choices(requests: &[ResolutionRequest]) -> Result<(), ScannerError> {
+    let mut keepers = BTreeSet::new();
+    let mut targets = BTreeSet::new();
+    for request in requests {
+        if matches!(request.action, ResolutionAction::Ignore) {
+            continue;
+        }
+        let (left, right) = canonical_request_paths(request)?;
+        let (keeper, target) = if matches!(request.action, ResolutionAction::KeepB) {
+            (right, left)
+        } else {
+            (left, right)
+        };
+        keepers.insert(keeper);
+        if !targets.insert(target) {
+            return Err(ScannerError::Validation(
+                "Conflicting duplicate choices target the same folder more than once".to_string(),
+            ));
+        }
+    }
+    if !keepers.is_disjoint(&targets) {
+        return Err(ScannerError::Validation(
+            "Conflicting duplicate choices would modify or delete an explicitly kept folder"
+                .to_string(),
+        ));
+    }
     Ok(())
 }
 

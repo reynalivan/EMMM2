@@ -1,5 +1,7 @@
 use crate::modules::duplicates::domain::dup_scan::DupScanGroup;
-use crate::modules::workspace::application::scanner::core::walker::{self, ModCandidate};
+#[cfg(test)]
+use crate::modules::workspace::application::scanner::core::walker;
+use crate::modules::workspace::application::scanner::core::walker::ModCandidate;
 use crate::shared::errors::ScannerError;
 use rayon::prelude::*;
 
@@ -40,6 +42,7 @@ struct ExactClusterCompression {
     full_profiles: HashMap<usize, HashProfile>,
 }
 
+#[cfg(test)]
 pub async fn scan_duplicates(
     mods_root: &Path,
     game_id: &str,
@@ -524,7 +527,6 @@ fn canonical_pair(left: &str, right: &str) -> (String, String) {
 /// window every later snapshot is out of range and the run ends. The size
 /// ratio is not monotonic along that order, so it stays a test inside the
 /// window rather than a second bound.
-#[cfg(test)]
 #[cfg(test)]
 fn phase1_candidate_filtering(snapshots: &[ModSnapshot]) -> Vec<(usize, usize)> {
     phase1_candidate_filtering_without_exact_cliques(snapshots, &[])

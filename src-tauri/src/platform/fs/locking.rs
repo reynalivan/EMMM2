@@ -201,14 +201,6 @@ pub(crate) fn discover_lock_processes(path: &Path) -> LockDiscovery {
     }
 }
 
-pub fn get_locking_processes(path: &Path) -> Vec<String> {
-    discover_lock_processes(path)
-        .processes
-        .into_iter()
-        .map(|process| process.name)
-        .collect()
-}
-
 pub(crate) fn control_lock_process(process: &LockProcess, force: bool) -> Result<String, String> {
     #[cfg(target_os = "windows")]
     {

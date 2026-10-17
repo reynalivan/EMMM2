@@ -88,15 +88,40 @@ fn rejects_negative_modifiers_for_the_globally_registered_overlay_binding() {
 }
 
 #[test]
+fn disabled_invalid_configuration_does_not_mutate_os_shortcuts() {
+    let manager = HotkeyManager::new();
+    let lifecycle = manager.registration_lifecycle();
+    let mut sink = FakeShortcutSink::default();
+    for config in [
+        HotkeyConfig {
+            enabled: false,
+            toggle_overlay: "F7\n[Constants]".to_string(),
+            ..Default::default()
+        },
+        HotkeyConfig {
+            enabled: false,
+            next_preset: "Ctrl+A".to_string(),
+            prev_preset: "control+KeyA".to_string(),
+            ..Default::default()
+        },
+    ] {
+        assert!(manager
+            .update_bindings_with_sink(&lifecycle, &mut sink, &config)
+            .is_err());
+        assert_eq!(sink.operations, 0);
+    }
+}
+
+#[test]
 fn manager_has_no_actions_until_tauri_registers_shortcuts() {
-    let manager = HotkeyManager::new(&HotkeyConfig::default());
+    let manager = HotkeyManager::new();
     assert_eq!(manager.lookup_action("f5"), None);
     assert_eq!(manager.lookup_action("shift+f6"), None);
 }
 
 #[test]
 fn manager_looks_up_plugin_descriptor_by_os_identity() {
-    let manager = HotkeyManager::new(&HotkeyConfig::default());
+    let manager = HotkeyManager::new();
     let lifecycle = manager.registration_lifecycle();
     let mut sink = FakeShortcutSink::default();
     manager
@@ -111,7 +136,7 @@ fn manager_looks_up_plugin_descriptor_by_os_identity() {
 
 #[test]
 fn registration_lifecycle_serializes_overlay_restore_and_save() {
-    let manager = std::sync::Arc::new(HotkeyManager::new(&HotkeyConfig::default()));
+    let manager = std::sync::Arc::new(HotkeyManager::new());
     let overlay_restore = manager.registration_lifecycle();
     let (sender, receiver) = std::sync::mpsc::channel();
     let concurrent_save = std::sync::Arc::clone(&manager);
@@ -144,7 +169,7 @@ fn rejects_os_equivalent_duplicate_bindings() {
 async fn stale_revision_is_rejected_before_runtime_registration() {
     let pool = crate::test_utils::init_test_db().await.pool;
     let service = ConfigService::new_for_test(pool);
-    let manager = HotkeyManager::new(&HotkeyConfig::default());
+    let manager = HotkeyManager::new();
     let mut sink = FakeShortcutSink::default();
 
     let result = crate::modules::automation::adapters::tauri::hotkey_cmds::commit_hotkey_configuration_with_sink(
@@ -173,7 +198,7 @@ async fn persistence_race_restores_latest_committed_bindings() {
         next_preset: "Ctrl+F9".to_string(),
         ..Default::default()
     };
-    let manager = HotkeyManager::new(&HotkeyConfig::default());
+    let manager = HotkeyManager::new();
     let service_for_race = std::sync::Arc::clone(&service);
     let latest_for_race = latest.clone();
     let mut sink = FakeShortcutSink {
@@ -220,7 +245,7 @@ async fn persistence_failure_reports_failed_os_restoration() {
         next_preset: "Ctrl+F9".to_string(),
         ..Default::default()
     };
-    let manager = HotkeyManager::new(&HotkeyConfig::default());
+    let manager = HotkeyManager::new();
     let concurrent = std::sync::Arc::clone(&service);
     let mut sink = FakeShortcutSink {
         operations: 0,
@@ -289,7 +314,7 @@ fn overlay_rejects_changed_binding_game_executable_and_disabled_hotkeys() {
 #[test]
 fn overlay_restores_registration_after_focus_loss_or_input_failure() {
     let settings = overlay_settings();
-    let manager = HotkeyManager::new(&settings.hotkeys);
+    let manager = HotkeyManager::new();
     let lifecycle = manager.registration_lifecycle();
     let mut sink = FakeShortcutSink::default();
     manager
@@ -316,7 +341,7 @@ fn overlay_restores_registration_after_focus_loss_or_input_failure() {
 #[test]
 fn overlay_canceled_during_release_wait_never_suspends_or_replays() {
     let settings = overlay_settings();
-    let manager = HotkeyManager::new(&settings.hotkeys);
+    let manager = HotkeyManager::new();
     let lifecycle = manager.registration_lifecycle();
     let mut sink = FakeShortcutSink::default();
     let mut disabled = settings.clone();

@@ -68,6 +68,17 @@ async fn seed_dedup_group(
     folder_a: &str,
     folder_b: &str,
 ) {
+    seed_dedup_group_with_confidence(context, game_id, group_id, folder_a, folder_b, 100).await;
+}
+
+async fn seed_dedup_group_with_confidence(
+    context: &TestContext,
+    game_id: &str,
+    group_id: &str,
+    folder_a: &str,
+    folder_b: &str,
+    confidence_score: u8,
+) {
     let job_id = format!("job-{group_id}");
     sqlx::query(
         "INSERT OR IGNORE INTO dedup_jobs (id, game_id, root_path, status) VALUES (?, ?, ?, 'completed')",
@@ -81,7 +92,7 @@ async fn seed_dedup_group(
 
     let group = crate::modules::duplicates::domain::dup_scan::DupScanGroup {
         group_id: group_id.to_string(),
-        confidence_score: 100,
+        confidence_score,
         match_reason: "Exact hash match".to_string(),
         is_unsafe: false,
         signals: Vec::new(),
@@ -96,7 +107,7 @@ async fn seed_dedup_group(
                     total_size_bytes: 12,
                     file_count: 1,
                     is_safe: true,
-                    confidence_score: 100,
+                    confidence_score,
                     signals: Vec::new(),
                 },
             )
@@ -113,6 +124,118 @@ async fn seed_dedup_group(
     .execute(&context.pool)
     .await
     .unwrap();
+}
+
+async fn prepare_overlapping_keep_choices(
+    choices: &[(&str, &str)],
+) -> (
+    TestContext,
+    Result<super::DurableResolutionBatch, crate::shared::errors::AppError>,
+) {
+    let context = setup_context().await;
+    for name in ["A", "B", "C"] {
+        let folder = context.mods_root.join(name);
+        fs::create_dir(&folder).unwrap();
+        fs::write(folder.join("mod.ini"), name).unwrap();
+    }
+    let mut requests = Vec::new();
+    for (index, (keeper, removed)) in choices.iter().enumerate() {
+        let group_id = format!("overlap-{index}");
+        let folder_a = context
+            .mods_root
+            .join(keeper)
+            .to_string_lossy()
+            .into_owned();
+        let folder_b = context
+            .mods_root
+            .join(removed)
+            .to_string_lossy()
+            .into_owned();
+        seed_dedup_group_with_confidence(&context, "game-1", &group_id, &folder_a, &folder_b, 95)
+            .await;
+        requests.push(ResolutionRequest {
+            group_id,
+            action: ResolutionAction::KeepA,
+            folder_a,
+            folder_b,
+        });
+    }
+    let result = super::prepare_durable_batch(requests, "game-1", &context.pool).await;
+    (context, result)
+}
+
+#[tokio::test]
+async fn overlapping_keep_cycle_is_rejected_before_planning() {
+    let (context, result) =
+        prepare_overlapping_keep_choices(&[("A", "B"), ("B", "C"), ("C", "A")]).await;
+    assert!(
+        result.is_err(),
+        "every explicit keeper must survive the whole batch"
+    );
+    for name in ["A", "B", "C"] {
+        assert_eq!(
+            fs::read_to_string(context.mods_root.join(name).join("mod.ini")).unwrap(),
+            name
+        );
+    }
+}
+
+#[tokio::test]
+async fn overlapping_keep_dependency_is_rejected_before_planning() {
+    let (_, result) = prepare_overlapping_keep_choices(&[("A", "B"), ("B", "C")]).await;
+    assert!(
+        result.is_err(),
+        "a keeper cannot be another group's deletion target"
+    );
+}
+
+#[tokio::test]
+async fn overlapping_repeated_deletion_is_rejected_before_planning() {
+    let (_, result) = prepare_overlapping_keep_choices(&[("A", "C"), ("B", "C")]).await;
+    assert!(
+        result.is_err(),
+        "a folder must not have two destructive owners"
+    );
+}
+
+#[tokio::test]
+async fn overlapping_shared_keeper_with_distinct_losers_is_allowed() {
+    let (context, result) = prepare_overlapping_keep_choices(&[("A", "B"), ("A", "C")]).await;
+    let plan = result.unwrap().operation_plan("game-1").unwrap();
+    assert_eq!(plan.steps.len(), 2);
+    assert!(plan
+        .steps
+        .iter()
+        .all(|step| step.old_path.as_ref() != Some(&context.mods_root.join("A"))));
+}
+
+#[test]
+fn batch_choices_use_physical_paths_and_respect_keep_b() {
+    let temp = TempDir::new().unwrap();
+    for name in ["A", "B", "DISABLED B"] {
+        fs::create_dir(temp.path().join(name)).unwrap();
+    }
+    let request = |action, left: &str, right: &str| ResolutionRequest {
+        group_id: "batch".into(),
+        action,
+        folder_a: temp.path().join(left).to_string_lossy().into_owned(),
+        folder_b: temp.path().join(right).to_string_lossy().into_owned(),
+    };
+    assert!(super::validate_batch_choices(&[
+        request(ResolutionAction::KeepA, "A", "B"),
+        request(ResolutionAction::KeepB, "DISABLED B", "A"),
+    ])
+    .is_ok());
+    assert!(super::validate_batch_choices(&[
+        request(ResolutionAction::KeepB, "B", "A"),
+        request(ResolutionAction::KeepA, "B", "DISABLED B"),
+    ])
+    .is_err());
+    assert!(super::validate_batch_choices(&[
+        request(ResolutionAction::KeepA, "A", "B"),
+        request(ResolutionAction::KeepA, "A", "./B"),
+    ])
+    .is_err());
 }
 
 async fn seed_pair(context: &TestContext, game_id: &str) -> (String, String) {

@@ -208,6 +208,7 @@ pub fn search_master_db_service(
 }
 
 mod cache;
+pub(crate) use cache::committed_object_removal;
 pub use cache::{get_cached, MasterDbCache};
 pub(crate) mod asset_pack;
 pub use asset_pack::{CatalogKeyviewerEntry, CatalogPackRefreshResult, CatalogPackStatus};

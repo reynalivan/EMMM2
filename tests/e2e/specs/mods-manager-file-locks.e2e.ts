@@ -101,10 +101,23 @@ describe('Mods Manager persistent Windows file lock recovery', function () {
       [path.resolve('tests/e2e/support/hold-file-lock.rs'), '-o', holderExecutable],
       { windowsHide: true },
     );
-    for (const name of ['Persistent', 'Cancel', 'Terminate', 'Replacement']) {
-      await addMockMod(game, OBJECT, name);
+    for (const [index, name] of [
+      'Persistent',
+      'Cancel',
+      'Terminate',
+      'Replacement',
+      'BulkOld',
+      'BulkOther',
+      'BulkNew',
+    ].entries()) {
+      const mod = await addMockMod(game, OBJECT, name);
+      await fs.writeFile(
+        path.join(mod, 'mod.ini'),
+        `[TextureOverrideOwned${index}]\nhash = ${index.toString(16).padStart(8, '0')}\n`,
+      );
     }
     gameId = await seedGameAndOpenDashboard(game);
+    await browser.setWindowSize(1360, 900);
     await gotoWorkspaceView('mods');
     const object = (await getObjects(gameId)).find((entry) => entry.name === OBJECT);
     if (!object) throw new Error('Owned lock object was not indexed');
@@ -180,6 +193,64 @@ describe('Mods Manager persistent Windows file lock recovery', function () {
       timeout: TIMEOUT,
     });
     await fs.access(path.join(game.modsPath, OBJECT, 'Terminate Renamed'));
+  });
+
+  it('preserves a newer selection when an older locked bulk delete finishes', async () => {
+    const output = path.resolve('.audit-output/fix-open-matrix-20261017/native');
+    await fs.mkdir(output, { recursive: true });
+    const old = path.join(game.modsPath, OBJECT, 'BulkOld');
+    const other = path.join(game.modsPath, OBJECT, 'BulkOther');
+    const newer = path.join(game.modsPath, OBJECT, 'BulkNew');
+    const firstHolder = await hold(old);
+    const secondHolder = await hold(other);
+    try {
+      const card = (name: string) =>
+        $(`//*[@data-testid="folder-grid"]//*[@role="gridcell"][.//h3[@title="${name}"]]`);
+      for (const name of ['BulkOld', 'BulkOther']) {
+        const item = await card(name);
+        await item.moveTo();
+        const checkbox = await item.$('input[type="checkbox"]:not([aria-label])');
+        await checkbox.waitForClickable({ timeout: TIMEOUT });
+        await checkbox.click();
+        await expect(checkbox).toBeChecked();
+      }
+      const more = await $('.bulk-action-bar--floating button[aria-label="More actions"]');
+      await more.waitForClickable({ timeout: TIMEOUT });
+      await more.click();
+      const trash = await (await $('.bulk-action-bar--floating')).$('button=Move to Trash');
+      await trash.click();
+      const confirm = await (await $('dialog:modal')).$('button=Move All to Trash');
+      await confirm.waitForClickable({ timeout: TIMEOUT });
+      await expect($('dialog:modal h3')).toHaveText('Delete 2 Mods?');
+      await confirm.click();
+      await (await $('dialog:modal')).$('button=Cancel').click();
+      await $('dialog:modal').waitForExist({ reverse: true });
+      const currentCard = await card('BulkNew');
+      await currentCard.moveTo();
+      const newerCheckbox = await currentCard.$('input[type="checkbox"]:not([aria-label])');
+      await newerCheckbox.click();
+      await expect(newerCheckbox).toBeChecked();
+      await browser.waitUntil(
+        async () => ((await currentCard.getAttribute('class')) ?? '').includes('border-primary/60'),
+        { timeout: TIMEOUT },
+      );
+      await browser.saveScreenshot(path.join(output, 'new-selection-pending.png'));
+      expect(await trash.isEnabled()).toBe(false);
+      await trash.waitForEnabled({ timeout: TIMEOUT });
+      await expect(newerCheckbox).toBeChecked();
+      await expect(currentCard).toHaveElementClass('border-primary/60');
+      await browser.saveScreenshot(path.join(output, 'new-selection-settled.png'));
+      await fs.access(old);
+      await fs.access(other);
+      await fs.access(newer);
+    } catch (error) {
+      await browser.saveScreenshot(path.join(output, 'failure.png'));
+      await fs.writeFile(path.join(output, 'failure.html'), await browser.getPageSource());
+      throw error;
+    } finally {
+      await release(firstHolder);
+      await release(secondHolder);
+    }
   });
 
   it('rejects a forged recovery context through actual IPC', async () => {

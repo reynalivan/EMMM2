@@ -81,6 +81,7 @@
     }
   },
   "report": {
+    "conflicting_choices": "Pilihan bertentangan: folder yang dipertahankan akan dihapus, atau folder akan dihapus lebih dari sekali. Periksa grup yang tumpang tindih.",
     "title": "Hasil Pemindaian Duplikat",
     "loading": "Memuat laporan duplikat...",
     "error_title": "Gagal memuat laporan duplikat",

@@ -419,6 +419,7 @@ pub async fn rollback_prepared_move(
     }
 }
 
+#[cfg(test)]
 pub async fn move_mods_to_object_service(
     pool: &sqlx::SqlitePool,
     _op_guard: &crate::platform::fs::operation_lock::OpGuard,

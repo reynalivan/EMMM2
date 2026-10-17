@@ -128,41 +128,6 @@ async fn rollback_object_create(
     original_error
 }
 
-async fn rollback_object_create_without_filesystem(
-    app: &tauri::AppHandle,
-    pool: &sqlx::SqlitePool,
-    game_id: &str,
-    lease: MutationLease,
-    original_error: AppError,
-) -> AppError {
-    if let Err(error) = lease.begin_rollback() {
-        let message = format!("{original_error}; object create rollback could not start: {error}");
-        let _ = lease.fail(message.clone());
-        return AppError::Io(message);
-    }
-    if let Err(error) = lease.mark_step_rolled_back(0) {
-        let message = format!("{original_error}; object create journal rollback failed: {error}");
-        let _ = lease.fail(message.clone());
-        return AppError::Io(message);
-    }
-    if let Err(error) = crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
-        app, pool, game_id, &lease,
-    )
-    .await
-    .and_then(crate::modules::reconciliation::application::disk_reconcile::emit::require_applied_reconcile)
-    {
-        let message = format!("{original_error}; object create rollback reconcile failed: {error}");
-        let _ = lease.fail(message.clone());
-        return AppError::Io(message);
-    }
-    if let Err(error) = lease.finish_rollback() {
-        return AppError::Io(format!(
-            "{original_error}; object create rollback finalization failed: {error}"
-        ));
-    }
-    original_error
-}
-
 async fn rollback_object_delete(
     app: &tauri::AppHandle,
     pool: &sqlx::SqlitePool,
@@ -271,6 +236,11 @@ pub async fn create_object_cmd(
         .app_data_dir()
         .ok()
         .map(|path| path.join("asset-pack"));
+    let prepared = crate::modules::catalog::application::objects::mutate::prepare_object_create(
+        pool.inner(),
+        &input,
+    )
+    .await?;
     let prepared_thumbnail =
         crate::modules::catalog::application::objects::mutate::prepare_object_thumbnail(
             &input,
@@ -279,56 +249,44 @@ pub async fn create_object_cmd(
         .await?;
     let game_guard = disk_reconcile.game_lock(&game_id).lock_owned().await;
     disk_reconcile.ensure_core_ready_for_mutation(&game_id)?;
-    let prepared = crate::modules::catalog::application::objects::mutate::prepare_object_create(
-        pool.inner(),
-        &input,
-    )
-    .await?;
+    let suppression = watcher
+        .suppressor
+        .suppress_paths(prepared.suppression_paths());
     let operation_guard = match op_lock
-        .acquire_operation(crate::modules::mutation::journal::OperationPlan::new(
-            "object-create",
-            &game_id,
-            vec![prepared.journal_step()],
-        ))
+        .acquire_prepared_operation(|| {
+            disk_reconcile.ensure_core_ready_for_mutation(&game_id)?;
+            prepared.prepare()?;
+            Ok(crate::modules::mutation::journal::OperationPlan::new(
+                crate::modules::mutation::api::FOLDER_CREATE_OPERATION_KIND,
+                &game_id,
+                vec![prepared.journal_step()?],
+            )
+            .with_source_epoch(prepared.source_epoch().to_string()))
+        })
         .await
     {
         Ok(guard) => guard,
-        Err(error) => return Err(error),
+        Err(error) => {
+            return match prepared.rollback() {
+                Ok(()) => Err(error),
+                Err(rollback) => Err(AppError::Io(format!(
+                    "{error}; object create staging cleanup failed: {rollback}"
+                ))),
+            };
+        }
     };
-    let mutation_lease = crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
+    let mutation_lease = match crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskMutationLease::from_ready_durable_guard(
         disk_reconcile.inner(),
         &game_id,
         game_guard,
         operation_guard,
-    )?;
-    let suppression = watcher
-        .suppressor
-        .suppress_paths(prepared.suppression_paths());
-    if let Err(error) = prepared.ensure_target_is_available() {
-        let error = rollback_object_create_without_filesystem(
-            &app,
-            pool.inner(),
-            &game_id,
-            mutation_lease,
-            error,
-        )
-        .await;
-        drop(suppression);
-        return Err(error);
-    }
-    if let Err(error) = prepared.prepare() {
-        let error = rollback_object_create(
-            &app,
-            pool.inner(),
-            &game_id,
-            mutation_lease,
-            &prepared,
-            AppError::Io(format!("Object create staging failed: {error}")),
-        )
-        .await;
-        drop(suppression);
-        return Err(error);
-    }
+    ) {
+        Ok(lease) => lease,
+        Err(error) => {
+            prepared.rollback()?;
+            return Err(error);
+        }
+    };
     if let Err(error) = prepared.promote() {
         let error = rollback_object_create(
             &app,
@@ -355,10 +313,25 @@ pub async fn create_object_cmd(
         drop(suppression);
         return Err(error);
     }
+    let target_pins = match prepared.pin_target() {
+        Ok(pins) => pins,
+        Err(error) => {
+            return Err(rollback_object_create(
+                &app,
+                pool.inner(),
+                &game_id,
+                mutation_lease,
+                &prepared,
+                error,
+            )
+            .await);
+        }
+    };
     let result = crate::modules::catalog::application::objects::mutate::create_object_cmd_inner_with_thumbnail(
         pool.inner(),
         input,
         prepared_thumbnail,
+        Some(&prepared),
     )
     .await;
     match result {
@@ -375,6 +348,7 @@ pub async fn create_object_cmd(
             {
                 Ok(result) => result,
                 Err(error) => {
+                    drop(target_pins);
                     let error = rollback_object_create(
                         &app,
                         pool.inner(),
@@ -395,6 +369,7 @@ pub async fn create_object_cmd(
             Ok(CreateObjectResult { id, sync_warning })
         }
         Err(error) => {
+            drop(target_pins);
             let error = rollback_object_create(
                 &app,
                 pool.inner(),
@@ -421,7 +396,6 @@ pub async fn update_object_cmd(
         '_,
         crate::modules::reconciliation::application::disk_reconcile::orchestrator::DiskReconcileState,
     >,
-    _op_lock: State<'_, crate::modules::mutation::coordinator::MutationCoordinator>,
 ) -> Result<(), AppError> {
     let (game_id, folder_path) =
         crate::modules::catalog::adapters::sqlite::object::get_game_id_and_folder_path(
@@ -498,26 +472,15 @@ pub async fn delete_object_cmd(
     )
     .await?;
     let Some(prepared) = prepared else {
-        drop(game_guard);
-        let op_guard = op_lock
-            .acquire_exempt(
-                crate::modules::mutation::coordinator::MutationExemption::CatalogProjection,
-            )
-            .await?;
-        crate::modules::catalog::application::objects::mutate::delete_object(
-            &pool,
-            &id,
-            force,
-            &state,
-            op_guard.op_guard(),
-        )
-        .await?;
-        drop(op_guard);
+        let operation_guard = op_lock.acquire_nested_operation_lock().await?;
+        disk_reconcile.ensure_core_ready_for_mutation(&game_id)?;
+        let lease = MutationLease::from_reconcile_guard(game_guard, operation_guard);
         let settlement = crate::modules::reconciliation::application::disk_reconcile::emit::settle_committed_reconcile(
-            crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile(
+            crate::modules::reconciliation::application::disk_reconcile::emit::run_full_internal_disk_reconcile_under_lease(
                 &app,
                 pool.inner(),
                 &game_id,
+                &lease,
             )
             .await,
         );

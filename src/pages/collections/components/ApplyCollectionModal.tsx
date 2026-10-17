@@ -1,8 +1,9 @@
 import { StatePanel, SummaryStat } from './ApplyCollectionStatePanel';
 import { ApplyPreviewSummary } from './ApplyPreviewSummary';
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState, type SyntheticEvent } from 'react';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
 import { createPortal } from 'react-dom';
-import { AlertTriangle, ArrowRight, CheckCircle2, Loader2 } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Loader2 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import {
   useApplyCollectionPreview,
@@ -42,9 +43,20 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
   const activeGameId = useAppStore((state) => state.activeGameId);
   const [missingPaths, setMissingPaths] = useState<string[] | null>(null);
   const [result, setResult] = useState<ApplyResult | null>(null);
-  const [previewMode, setPreviewMode] = useState<'full' | 'changes'>('full');
+  const [previewMode, setPreviewMode] = useState<'full' | 'changes'>('changes');
   const applyMutation = useApplyCollection();
   const replaceMutation = useReplaceCollectionWithCurrentState();
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  const isBusy = applyMutation.isPending || replaceMutation.isPending;
+  useDialogSync(dialogRef, true);
+
+  const handleClose = () => {
+    if (!isBusy) onClose();
+  };
+  const handleCancel = (event: SyntheticEvent<HTMLDialogElement>) => {
+    event.preventDefault();
+    handleClose();
+  };
   const previewQuery = useApplyCollectionPreview(activeGameId, collectionId);
   const progressQuery = useApplyProgress(activeGameId, applyMutation.isPending);
   const preview = previewQuery.data;
@@ -114,7 +126,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
 
   if (previewQuery.isError) {
     return createPortal(
-      <dialog className="modal modal-open z-100">
+      <dialog ref={dialogRef} className="modal z-100" onCancel={handleCancel} onClose={handleClose}>
         <div className="modal-box bg-base-200 border border-error/20 shadow-2xl max-w-lg">
           <h3 className="font-bold text-lg text-error flex items-center gap-2">
             <AlertTriangle size={20} /> {t('collections:apply.failed.title')}
@@ -132,22 +144,24 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
   }
 
   return createPortal(
-    <dialog className="modal modal-open z-100">
-      <div className="modal-box bg-base-200 border border-base-content/10 shadow-2xl max-w-6xl w-11/12 flex flex-col max-h-[85vh] p-0">
-        <div className="p-6 border-b border-base-content/5 shrink-0 bg-base-300 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-warning/20 text-warning flex items-center justify-center shrink-0">
-              {result ? <CheckCircle2 size={20} /> : <AlertTriangle size={20} />}
+    <dialog ref={dialogRef} className="modal z-100" onCancel={handleCancel} onClose={handleClose}>
+      <div className="modal-box bg-base-200 border border-base-content/10 shadow-2xl max-w-5xl w-11/12 flex flex-col min-h-[360px] max-h-[76vh] p-0">
+        <div className="px-5 py-4 border-b border-base-content/8 shrink-0 bg-base-300 flex items-center">
+          <div className="flex items-center gap-3 min-w-0">
+            <div
+              className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${result ? 'bg-success/15 text-success' : 'bg-warning/15 text-warning'}`}
+            >
+              {result ? <CheckCircle2 size={17} /> : <AlertTriangle size={17} />}
             </div>
-            <div>
-              <h3 className="font-bold text-lg">
+            <div className="min-w-0">
+              <h3 className="font-semibold text-base truncate">
                 {result
                   ? t('collections:apply.success.title', 'Collection Applied')
                   : preview
                     ? t('collections:apply.title', { name: preview.collection_name })
                     : t('collections:apply.title_loading')}
               </h3>
-              <p className="text-sm text-base-content/70">
+              <p className="text-xs text-base-content/60 mt-0.5">
                 {result
                   ? t(
                       'collections:apply.success.desc',
@@ -168,7 +182,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
           />
         )}
 
-        <div className="flex-1 overflow-hidden bg-base-100 flex min-h-[50vh]">
+        <div className="flex-1 min-h-[180px] max-h-[55vh] overflow-hidden bg-base-100 flex">
           {previewQuery.isLoading ? (
             <div className="flex h-full w-full flex-col text-base-content/50" aria-busy="true">
               <WorkspacePanelSkeleton variant="preview" />
@@ -249,7 +263,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
               )}
             </div>
           ) : preview ? (
-            <div className="flex w-full divide-x divide-base-content/5">
+            <div className="flex w-full min-w-0 divide-x divide-base-content/8">
               <StatePanel
                 containerClass="bg-base-100/30"
                 heading={t('collections:apply.panels.before', 'Current State')}
@@ -267,12 +281,6 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
                 nodeChanges={diff?.currentChanges}
                 t={t}
               />
-
-              <div className="flex items-center justify-center -mx-3 z-10 w-0">
-                <div className="w-8 h-8 rounded-full bg-base-300 border border-base-content/10 flex items-center justify-center shadow-lg text-base-content/50">
-                  <ArrowRight size={16} />
-                </div>
-              </div>
 
               <StatePanel
                 containerClass="bg-base-200/20"
@@ -322,7 +330,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
           isApplying={applyMutation.isPending}
           isReplacing={replaceMutation.isPending}
           isPreviewLoading={previewQuery.isLoading}
-          onClose={onClose}
+          onClose={handleClose}
           onDismissMissing={() => setMissingPaths(null)}
           onConfirm={() => {
             void confirmApplyAction(!!missingPaths);
@@ -332,7 +340,7 @@ export function ApplyCollectionModal({ collectionId, onClose }: ApplyCollectionM
       </div>
 
       <form method="dialog" className="modal-backdrop">
-        <button onClick={onClose} disabled={applyMutation.isPending}>
+        <button type="button" onClick={handleClose} disabled={isBusy}>
           {t('common:actions.close')}
         </button>
       </form>

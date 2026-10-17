@@ -39,10 +39,8 @@ pub async fn list_collections(
         .and_then(|state| state.active_collection_id);
 
     let mut summaries = Vec::with_capacity(named_collections.len());
-    for collection in named_collections {
-        let mut current = collection.clone();
-        let safety =
-            collection::member_safety_summary(pool, &collection.game_id, &collection.id).await?;
+    for mut current in named_collections {
+        let safety = collection::member_safety_summary(pool, &current.game_id, &current.id).await?;
         current.is_safe = !safety.contains_unsafe;
         let mut summary = collection::to_summary(&current, active_id.as_deref());
         summary.is_safety_classified = safety.is_fully_classified;
@@ -160,7 +158,7 @@ pub async fn create_collection(
     )
     .await?;
     if let Some(draft_id) = draft_to_consume.as_deref() {
-        super::runtime::ensure_rollback_draft_is_unreferenced(&mut tx, draft_id).await?;
+        super::runtime::ensure_rollback_collection_is_unreferenced(&mut tx, draft_id).await?;
     }
     if save_mode == CreateCollectionMode::SaveCurrentState {
         collection::runtime::set_active_tx(&mut tx, &input.game_id, Some(&id)).await?;
@@ -311,6 +309,7 @@ pub async fn delete_collection(pool: &SqlitePool, id: &str) -> Result<(), Collec
         ));
     }
     let mut tx = pool.begin().await?;
+    super::runtime::ensure_rollback_collection_is_unreferenced(&mut tx, id).await?;
     collection::runtime::clear_collection_references_tx(&mut tx, id).await?;
     collection::delete_tx(&mut tx, id).await?;
     tx.commit().await?;
@@ -328,6 +327,10 @@ pub async fn update_collection(
         collection::rename(pool, &collection, name).await?;
     }
     let collection = require_collection(pool, &input.id).await?;
+    let runtime = collection::runtime::get(pool, &collection.game_id).await?;
+    let active_id = runtime
+        .as_ref()
+        .and_then(|state| state.active_collection_id.as_deref());
 
-    Ok(collection::to_summary(&collection, None))
+    Ok(collection::to_summary(&collection, active_id))
 }

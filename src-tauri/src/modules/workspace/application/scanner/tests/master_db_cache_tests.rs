@@ -162,17 +162,21 @@ async fn invalidation_during_load_retries_instead_of_publishing_stale_entries() 
         let calls = Arc::clone(&calls);
         tokio::spawn(async move {
             cache
-                .get_or_load("gimi", || async {
-                    let call = calls.fetch_add(1, Ordering::SeqCst);
-                    if call == 0 {
-                        started.notify_one();
-                        release.notified().await;
-                    }
-                    Ok(MasterDb::new(vec![entry(
-                        if call == 0 { "Old" } else { "New" },
-                        vec![],
-                    )]))
-                })
+                .get_or_load(
+                    "gimi",
+                    || 0,
+                    || async {
+                        let call = calls.fetch_add(1, Ordering::SeqCst);
+                        if call == 0 {
+                            started.notify_one();
+                            release.notified().await;
+                        }
+                        Ok(MasterDb::new(vec![entry(
+                            if call == 0 { "Old" } else { "New" },
+                            vec![],
+                        )]))
+                    },
+                )
                 .await
                 .unwrap()
         })
@@ -184,7 +188,11 @@ async fn invalidation_during_load_retries_instead_of_publishing_stale_entries() 
     assert_eq!(result.entries[0].name, "New");
     assert_eq!(calls.load(Ordering::SeqCst), 2);
     let cached = cache
-        .get_or_load("gimi", || async { panic!("must reuse the fresh cache") })
+        .get_or_load(
+            "gimi",
+            || 0,
+            || async { panic!("must reuse the fresh cache") },
+        )
         .await
         .unwrap();
     assert!(Arc::ptr_eq(&result, &cached));
@@ -244,4 +252,162 @@ async fn user_aliases_are_scoped_to_the_requested_game_type() {
         aliases.get("shared-entry"),
         Some(&vec!["gimi-alias".to_string()])
     );
+}
+
+#[tokio::test]
+async fn committed_object_prune_removes_alias_from_warm_matcher() {
+    use crate::modules::games::domain::models::GameType;
+    use crate::test_utils::{
+        insert_test_game, insert_test_object, TestGameFixture, TestObjectFixture,
+    };
+    let pool = crate::test_utils::init_test_db().await.pool;
+    let tmp = tempfile::tempdir().unwrap();
+    insert_test_game(
+        &pool,
+        &TestGameFixture {
+            id: "alias-prune-game",
+            name: "Game",
+            game_type: GameType::Gimi,
+            path: "/game",
+            mods_path: Some(&tmp.path().to_string_lossy()),
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &pool,
+        &TestObjectFixture {
+            id: "alias-object",
+            game_id: "alias-prune-game",
+            name: "Raiden Shogun",
+            folder_path: "Raiden",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+    sqlx::query("UPDATE objects SET matched_entry_key = ?, custom_skins = '[{\"name\":\"User\",\"aliases\":[\"Beelzebul\"]}]' WHERE id = 'alias-object'")
+        .bind(canonical_entry_key("Raiden Shogun")).execute(&pool).await.unwrap();
+    let cache = super::MasterDbCache::default();
+    let load = || async {
+        let mut entries = vec![entry("Raiden Shogun", vec![])];
+        attach_user_aliases(
+            &mut entries,
+            &super::load_user_aliases(&pool, GameType::Gimi as i32).await,
+        );
+        Ok(MasterDb::new(entries))
+    };
+    let warm = cache
+        .get_or_load("gimi", super::alias_source_revision, load)
+        .await
+        .unwrap();
+    assert_ne!(match_folder(&warm, NICKNAME).status, MatchStatus::NoMatch);
+
+    sqlx::query("CREATE TRIGGER prevent_alias_prune BEFORE DELETE ON objects BEGIN SELECT RAISE(ABORT, 'injected alias prune failure'); END")
+        .execute(&pool).await.unwrap();
+    let failed = crate::modules::reconciliation::application::disk_reconcile::reconcile::reconcile_disk_projection(
+        crate::modules::reconciliation::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+            pool: &pool, game_id: "alias-prune-game", mods_path: tmp.path(),
+            safe_mode_keywords: &[],
+            reason: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::WatcherBatch,
+            changed_paths: &[], force_full: true, watcher_events: None, path_hints: &[],
+            trusted_mutation_scope: false, progress_reporter: None, precomputed_discovery: None,
+        },
+    ).await;
+    assert!(failed.is_err());
+    assert_ne!(
+        match_folder(
+            &cache
+                .get_or_load("gimi", super::alias_source_revision, load)
+                .await
+                .unwrap(),
+            NICKNAME
+        )
+        .status,
+        MatchStatus::NoMatch
+    );
+    sqlx::query("DROP TRIGGER prevent_alias_prune")
+        .execute(&pool)
+        .await
+        .unwrap();
+
+    crate::modules::reconciliation::application::disk_reconcile::reconcile::reconcile_disk_projection(
+        crate::modules::reconciliation::application::disk_reconcile::reconcile::ReconcileDiskProjectionRequest {
+            pool: &pool, game_id: "alias-prune-game", mods_path: tmp.path(),
+            safe_mode_keywords: &[],
+            reason: &crate::modules::reconciliation::application::disk_reconcile::types::DiskReconcileReason::WatcherBatch,
+            changed_paths: &[], force_full: true, watcher_events: None, path_hints: &[],
+            trusted_mutation_scope: false, progress_reporter: None, precomputed_discovery: None,
+        },
+    ).await.unwrap();
+
+    let remaining: i64 =
+        sqlx::query_scalar("SELECT COUNT(*) FROM objects WHERE id = 'alias-object'")
+            .fetch_one(&pool)
+            .await
+            .unwrap();
+    assert_eq!(remaining, 0);
+    let reloaded = cache
+        .get_or_load("gimi", super::alias_source_revision, load)
+        .await
+        .unwrap();
+    assert_eq!(
+        match_folder(&reloaded, NICKNAME).status,
+        MatchStatus::NoMatch
+    );
+}
+
+#[tokio::test]
+async fn alias_revision_during_load_retries_before_publishing() {
+    use std::sync::{
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+        Arc,
+    };
+    let cache = Arc::new(super::MasterDbCache::default());
+    let revision = Arc::new(AtomicU64::new(0));
+    let calls = Arc::new(AtomicUsize::new(0));
+    let started = Arc::new(tokio::sync::Notify::new());
+    let release = Arc::new(tokio::sync::Notify::new());
+    let loading = {
+        let cache = Arc::clone(&cache);
+        let revision = Arc::clone(&revision);
+        let calls = Arc::clone(&calls);
+        let started = Arc::clone(&started);
+        let release = Arc::clone(&release);
+        tokio::spawn(async move {
+            cache
+                .get_or_load(
+                    "gimi",
+                    || revision.load(Ordering::Acquire),
+                    || async {
+                        let call = calls.fetch_add(1, Ordering::SeqCst);
+                        if call == 0 {
+                            started.notify_one();
+                            release.notified().await;
+                        }
+                        Ok(MasterDb::new(vec![entry(
+                            if call == 0 { "Old" } else { "New" },
+                            vec![],
+                        )]))
+                    },
+                )
+                .await
+                .unwrap()
+        })
+    };
+    started.notified().await;
+    revision.fetch_add(1, Ordering::AcqRel);
+    release.notify_one();
+    let result = loading.await.unwrap();
+    assert_eq!(result.entries[0].name, "New");
+    assert_eq!(calls.load(Ordering::SeqCst), 2);
+    let cached = cache
+        .get_or_load(
+            "gimi",
+            || revision.load(Ordering::Acquire),
+            || async { panic!("fresh entry must be reused") },
+        )
+        .await
+        .unwrap();
+    assert!(Arc::ptr_eq(&result, &cached));
 }

@@ -6,6 +6,7 @@ import { useAppStore } from '@/app/store';
 const mutateAsync = vi.fn();
 const replaceMutateAsync = vi.fn();
 const replaceMutate = vi.fn();
+const dialogState = vi.hoisted(() => ({ applying: false, replacing: false, previewError: false }));
 
 vi.mock('react-i18next', () => ({
   initReactI18next: { type: '3rdParty', init: vi.fn() },
@@ -57,17 +58,17 @@ vi.mock('../hooks/useCollections', () => ({
       safe_mode_enabled: false,
     },
     isLoading: false,
-    isError: false,
-    error: null,
+    isError: dialogState.previewError,
+    error: dialogState.previewError ? new Error('Preview unavailable') : null,
   }),
   useApplyCollection: () => ({
     mutateAsync,
-    isPending: false,
+    isPending: dialogState.applying,
   }),
   useReplaceCollectionWithCurrentState: () => ({
     mutate: replaceMutate,
     mutateAsync: replaceMutateAsync,
-    isPending: false,
+    isPending: dialogState.replacing,
   }),
   useApplyProgress: () => ({
     data: null,
@@ -77,12 +78,47 @@ vi.mock('../hooks/useCollections', () => ({
 describe('ApplyCollectionModal', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    dialogState.applying = false;
+    dialogState.replacing = false;
+    dialogState.previewError = false;
     replaceMutate.mockImplementation((params: unknown) => {
       void replaceMutateAsync(params);
     });
     useAppStore.setState({
       activeGameId: 'game-1',
     });
+  });
+
+  it('opens a native modal and dismisses an idle cancel request', () => {
+    const onClose = vi.fn();
+    render(<ApplyCollectionModal collectionId="collection-1" onClose={onClose} />);
+    const dialog = screen.getByRole('dialog');
+    expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalled();
+    expect(dialog).toHaveAttribute('open');
+    fireEvent(dialog, new Event('cancel', { cancelable: true }));
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it.each(['applying', 'replacing'] as const)('blocks dismissal while %s', (operation) => {
+    dialogState[operation] = true;
+    const onClose = vi.fn();
+    render(<ApplyCollectionModal collectionId="collection-1" onClose={onClose} />);
+    const dialog = screen.getByRole('dialog');
+    const cancel = new Event('cancel', { cancelable: true });
+    fireEvent(dialog, cancel);
+    expect(cancel.defaultPrevented).toBe(true);
+    fireEvent(dialog, new Event('close'));
+    expect(onClose).not.toHaveBeenCalled();
+    expect(screen.getByText('common:actions.close')).toBeDisabled();
+  });
+
+  it('allows dismissal when preview loading fails', () => {
+    dialogState.previewError = true;
+    const onClose = vi.fn();
+    render(<ApplyCollectionModal collectionId="collection-1" onClose={onClose} />);
+    expect(HTMLDialogElement.prototype.showModal).toHaveBeenCalled();
+    fireEvent(screen.getByRole('dialog'), new Event('cancel', { cancelable: true }));
+    expect(onClose).toHaveBeenCalledOnce();
   });
 
   it('shows missing mods dialog from typed backend error payload', async () => {

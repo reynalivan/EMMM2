@@ -81,6 +81,7 @@
     }
   },
   "report": {
+    "conflicting_choices": "Conflicting choices: a kept folder would be deleted, or a folder would be deleted more than once. Review overlapping groups.",
     "title": "Duplicate Scan Results",
     "loading": "Loading duplicate report...",
     "error_title": "Failed to load duplicate report",

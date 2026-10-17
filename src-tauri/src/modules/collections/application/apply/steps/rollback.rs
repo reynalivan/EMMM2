@@ -145,8 +145,7 @@ pub(super) fn with_rollback_error(
     }
 }
 
-pub(super) async fn reconcile_after_mutation_failure(ctx: &mut ApplyContext, warnings: &[String]) {
-    ctx.warnings.extend(warnings.iter().cloned());
+pub(super) async fn reconcile_after_mutation_failure(ctx: &mut ApplyContext) {
     if let Some(proof) = ctx.source_root_proof.as_ref() {
         if let Err(error) = proof.validate(&ctx.mods_path) {
             ctx.warnings.push(format!(

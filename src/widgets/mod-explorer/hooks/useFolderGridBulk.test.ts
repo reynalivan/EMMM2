@@ -1,6 +1,6 @@
-import { createElement, type ReactNode } from 'react';
+import { createElement, useCallback, useState, type ReactNode } from 'react';
 import { act, renderHook, waitFor } from '@testing-library/react';
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { QueryClient, QueryClientProvider, useQuery } from '@tanstack/react-query';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ModFolder } from '@/entities/game-object';
 import { thumbnailKeys } from '@/entities/mod';
@@ -12,6 +12,7 @@ import {
 } from '@/entities/workspace';
 import { workspaceKeys } from '@/features/workspace-runtime';
 import { useFolderGridBulk } from './useFolderGridBulk';
+import { useWorkspaceExplorerSelection } from './useWorkspaceExplorerSelection';
 
 vi.unmock('@tanstack/react-query');
 
@@ -140,6 +141,144 @@ describe('useFolderGridBulk', () => {
     executeWorkspaceExplorerBulk.mockResolvedValue(bulkResult);
     bulkToggleMods.mockResolvedValue(bulkResult);
     applyRuntimeMutationResult.mockResolvedValue(undefined);
+  });
+
+  it.each([
+    ['selection', false],
+    ['game', false],
+    ['query', false],
+    ['selection', true],
+    ['game', true],
+    ['query', true],
+    ['search', false],
+    ['return-to-selection', false],
+  ] as const)(
+    'preserves newer %s when an old delete settles (expired: %s)',
+    async (change, expired) => {
+      let resolveDelete!: (value: BulkResult) => void;
+      let rejectDelete!: (reason: unknown) => void;
+      executeWorkspaceExplorerBulk.mockReturnValue(
+        new Promise<BulkResult>((resolve, reject) => {
+          resolveDelete = resolve;
+          rejectDelete = reject;
+        }),
+      );
+      const clearGridSelection = vi.fn();
+      const options = {
+        selection: { mode: 'explicit' as const, paths: new Set(['C:/Mods/Alice/Blue']) },
+        explorerQuery,
+        listingRevision: 'revision-1',
+        selectionStable: true,
+        sortedFolders: [],
+        clearGridSelection,
+        removeGridSelectionPaths: vi.fn(),
+        openMoveDialog: vi.fn(),
+      };
+      const { result, rerender } = renderHook((props) => useFolderGridBulk(props), {
+        initialProps: options,
+        wrapper,
+      });
+      act(() => result.current.handleBulkDeleteConfirm());
+      act(() => result.current.setBulkDeleteConfirm(false));
+      if (change === 'game') activeGameId.value = 'game-2';
+      rerender({
+        ...options,
+        selection:
+          change === 'selection' || change === 'return-to-selection'
+            ? { mode: 'explicit', paths: new Set(['C:/Mods/Alice/Red']) }
+            : options.selection,
+        explorerQuery:
+          change === 'query' ? { ...explorerQuery, explorer_sub_path: 'Bob' } : explorerQuery,
+        selectionStable: change !== 'search',
+      });
+      if (change === 'return-to-selection') rerender(options);
+      await act(async () => {
+        if (expired) rejectDelete({ type: 'ExplorerSnapshotExpired' });
+        else resolveDelete(bulkResult);
+      });
+      await waitFor(() => expect(result.current.bulkMutationPending).toBe(false));
+      expect(clearGridSelection).not.toHaveBeenCalled();
+    },
+  );
+
+  it('still clears its unchanged selection after a successful delete', async () => {
+    const clearGridSelection = vi.fn();
+    const { result } = renderHook(
+      () =>
+        useFolderGridBulk({
+          selection: { mode: 'explicit', paths: new Set(['C:/Mods/Alice/Blue']) },
+          explorerQuery,
+          listingRevision: 'revision-1',
+          sortedFolders: [],
+          clearGridSelection,
+          removeGridSelectionPaths: vi.fn(),
+          openMoveDialog: vi.fn(),
+        }),
+      { wrapper },
+    );
+    act(() => result.current.handleBulkDeleteConfirm());
+    await waitFor(() => expect(clearGridSelection).toHaveBeenCalledOnce());
+  });
+
+  it('retains a newer symbolic selection while refreshing an old expired query', async () => {
+    let rejectDelete!: (error: unknown) => void;
+    let resolvePage!: (page: { listingRevision: string }) => void;
+    executeWorkspaceExplorerBulk.mockReturnValue(
+      new Promise<BulkResult>((_resolve, reject) => {
+        rejectDelete = reject;
+      }),
+    );
+    const fetchPage = vi.fn(
+      () =>
+        new Promise<{ listingRevision: string }>((resolve) => {
+          resolvePage = resolve;
+        }),
+    );
+    const client = new QueryClient();
+    const key = workspaceKeys.explorerPages(explorerQuery);
+    client.setQueryData(key, { listingRevision: 'revision-newer' });
+    const queryWrapper = ({ children }: { children: ReactNode }) =>
+      createElement(QueryClientProvider, { client }, children);
+    const { result } = renderHook(
+      () => {
+        const page = useQuery({ queryKey: key, queryFn: fetchPage, staleTime: Infinity });
+        const [paths, setPaths] = useState(() => new Set(['C:/Mods/Alice/Blue']));
+        const clearPaths = useCallback(() => setPaths(new Set()), []);
+        const selection = useWorkspaceExplorerSelection({
+          query: explorerQuery,
+          listingRevision: page.data?.listingRevision ?? null,
+          totalMatching: 2,
+          loadedPaths: [],
+          explicitPaths: paths,
+          setExplicitPaths: setPaths,
+          clearExplicitPaths: clearPaths,
+        });
+        const bulk = useFolderGridBulk({
+          selection: selection.selection,
+          explorerQuery,
+          listingRevision: page.data?.listingRevision ?? null,
+          sortedFolders: [],
+          clearGridSelection: selection.clearSelection,
+          removeGridSelectionPaths: selection.removePaths,
+          openMoveDialog: vi.fn(),
+        });
+        return { selection, bulk };
+      },
+      { wrapper: queryWrapper },
+    );
+    act(() => result.current.bulk.handleBulkDeleteConfirm());
+    act(() => result.current.selection.selectAllMatching());
+    expect(result.current.selection.selection.mode).toBe('all_matching');
+    act(() => rejectDelete({ type: 'ExplorerSnapshotExpired' }));
+    await waitFor(() => expect(fetchPage).toHaveBeenCalledOnce());
+    try {
+      expect(client.getQueryData(key)).toEqual({ listingRevision: 'revision-newer' });
+      expect(result.current.selection.selection.mode).toBe('all_matching');
+    } finally {
+      await act(async () => resolvePage({ listingRevision: 'revision-newer' }));
+    }
+    await waitFor(() => expect(result.current.bulk.bulkMutationPending).toBe(false));
+    expect(result.current.selection.selection.mode).toBe('all_matching');
   });
 
   it('sends the typed selection and query directly to the backend bulk command', async () => {

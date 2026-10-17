@@ -1757,7 +1757,7 @@ async fn process_event_loop(
         let result = match crate::modules::reconciliation::api::disk_reconcile::orchestrator::try_reconcile_disk_state_for_prewarm(
             context, request.for_watcher_session(session.clone()),
         ).await {
-                Ok(Some(result)) => Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result)),
+                Ok(Some(result)) => Ok(result),
                 Ok(None) => {
                     retry_after = Some(
                         tokio::time::Instant::now()
@@ -1773,7 +1773,7 @@ async fn process_event_loop(
             break;
         }
         match result {
-            Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Applied(result)) => {
+            Ok(result) => {
                 if !disk_reconcile_state.mark_authority_reconciled(
                     &game_id,
                     mods_root,
@@ -1822,16 +1822,20 @@ async fn process_event_loop(
                     }
                     continue;
                 }
-                authority_context.retire_publication(&mut activation, &mut activation_recovery_pending, &mut pending_catch_up, &mut retry_after);
+                authority_context.retire_publication(
+                    &mut activation,
+                    &mut activation_recovery_pending,
+                    &mut pending_catch_up,
+                    &mut retry_after,
+                );
                 let recovering_activation = activation_recovery_pending
                     && activation.is_some_and(|activation| {
-                        disk_reconcile_state.activation_is_current(
-                            Some(&game_id),
-                            activation.activation_generation,
-                        )
+                        disk_reconcile_state
+                            .activation_is_current(Some(&game_id), activation.activation_generation)
                     });
                 if recovering_activation {
-                    let coordinator = app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
+                    let coordinator =
+                        app.state::<crate::modules::mutation::coordinator::MutationCoordinator>();
                     if let Some((accepted, _guard)) = try_clean_activation_recovery_result(
                         disk_reconcile_state.inner(),
                         suppressor.as_ref(),
@@ -1871,7 +1875,12 @@ async fn process_event_loop(
                                 continue;
                             }
                             RecoveredActivationPublication::Superseded => {
-                                authority_context.retire_publication(&mut activation, &mut activation_recovery_pending, &mut pending_catch_up, &mut retry_after);
+                                authority_context.retire_publication(
+                                    &mut activation,
+                                    &mut activation_recovery_pending,
+                                    &mut pending_catch_up,
+                                    &mut retry_after,
+                                );
                                 if !watcher_state.is_current_session(&session) {
                                     break;
                                 }
@@ -1917,14 +1926,6 @@ async fn process_event_loop(
                             crate::modules::system::application::telemetry::TelemetryErrorCode::None,
                         ),
                     ],
-                );
-            }
-            Ok(crate::modules::reconciliation::application::disk_reconcile::orchestrator::WatcherReconcileOutcome::Superseded) => {
-                if !watcher_state.is_current_session(&session) {
-                    break;
-                }
-                pending_catch_up = pending_watcher_catch_up_plan(
-                    disk_reconcile_state.inner(), &game_id, mods_root, watcher_session,
                 );
             }
             Err(error) => {

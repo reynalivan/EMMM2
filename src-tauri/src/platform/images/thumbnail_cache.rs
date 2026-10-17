@@ -39,6 +39,8 @@ static THUMBNAIL_CACHE: OnceLock<Mutex<ThumbnailCache>> = OnceLock::new();
 struct CachedEntry {
     webp_path: PathBuf,
     cached_at: Instant,
+    location: PathBuf,
+    source_location: PathBuf,
 }
 
 struct ResolutionScope {
@@ -149,7 +151,7 @@ impl ThumbnailCache {
     /// 4. Cold-resolve in `spawn_blocking` (FS traversal + image processing)
     ///
     /// A folder that does not exist resolves to `None` via `find_thumbnail`.
-    pub async fn resolve(_game_id: &str, folder_path: &str) -> Result<Option<String>, AppError> {
+    pub async fn resolve(folder_path: &str) -> Result<Option<String>, AppError> {
         Self::resolve_with_cache(Self::get_instance(), folder_path).await
     }
 
@@ -256,11 +258,13 @@ impl ThumbnailCache {
                 warn!("[Thumbnail] Generate failed for {:?}: {}", original, e);
                 e
             })?;
+            let current_folder_key = Self::identity_key(folder_path);
+            let source_location = Self::location_key(&original);
             let mut cache = lock(cache_state);
             if !attempt.is_current(&cache) {
                 continue;
             }
-            if Self::identity_key(folder_path) != folder_key {
+            if current_folder_key != folder_key {
                 return Err(AppError::Io(
                     "Preview folder changed during thumbnail generation".to_string(),
                 ));
@@ -270,6 +274,8 @@ impl ThumbnailCache {
                 CachedEntry {
                     webp_path: webp_path.clone(),
                     cached_at: Instant::now(),
+                    location: attempt.scope.location.clone(),
+                    source_location,
                 },
             );
             return Ok(Some(webp_path.to_string_lossy().to_string()));
@@ -286,17 +292,31 @@ impl ThumbnailCache {
     }
 
     fn invalidate_folder_with(cache_state: &Mutex<Self>, folder_path: &str) {
-        let key = Self::identity_key(Path::new(folder_path));
-        let location = Self::location_key(Path::new(folder_path));
+        let path = Path::new(folder_path);
+        let location = Self::location_key(path);
+        // A deleted nested source can no longer supply its own identity. Its
+        // surviving ancestors still identify the cached root after a toggle.
+        let ancestor_keys = path.ancestors().map(Self::identity_key).collect::<Vec<_>>();
+        let overlaps = |root: &Path| root.starts_with(&location) || location.starts_with(root);
         let mut cache = lock(cache_state);
         cache.pending_resolutions.retain(|pending| {
             pending.upgrade().is_some_and(|scope| {
-                scope.folder_key != key
-                    && !scope.location.starts_with(&location)
-                    && !location.starts_with(&scope.location)
+                !ancestor_keys.contains(&scope.folder_key) && !overlaps(&scope.location)
             })
         });
-        cache.folder_cache.pop(&key);
+        let stale_keys = cache
+            .folder_cache
+            .iter()
+            .filter(|(key, entry)| {
+                ancestor_keys.contains(key)
+                    || overlaps(&entry.location)
+                    || overlaps(&entry.source_location)
+            })
+            .map(|(key, _)| key.clone())
+            .collect::<Vec<_>>();
+        for key in stale_keys {
+            cache.folder_cache.pop(&key);
+        }
     }
 
     /// A completed full disk scan has no precise image paths for offline
@@ -314,11 +334,15 @@ impl ThumbnailCache {
 
     /// Invalidate the parent folder cache for a changed image path.
     pub fn invalidate(original_path: &Path) {
+        Self::invalidate_with(Self::get_instance(), original_path);
+    }
+
+    fn invalidate_with(cache_state: &Mutex<Self>, original_path: &Path) {
         if let Some(parent) = original_path.parent() {
-            Self::invalidate_folder(&parent.to_string_lossy());
+            Self::invalidate_folder_with(cache_state, &parent.to_string_lossy());
         }
 
-        let base_dir = lock(Self::get_instance()).base_dir.clone();
+        let base_dir = lock(cache_state).base_dir.clone();
         let Some(base_dir) = base_dir else {
             return;
         };

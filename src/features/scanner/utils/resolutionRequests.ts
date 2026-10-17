@@ -1,4 +1,12 @@
 import type { DupScanGroup, DuplicateSelection, ResolutionRequest } from '@/entities/workspace';
+import { canonicalPathKey } from '@/shared/lib/pathKey';
+
+export class DuplicateResolutionConflictError extends Error {
+  constructor() {
+    super('Duplicate choices would delete a kept folder or delete a folder more than once');
+    this.name = 'DuplicateResolutionConflictError';
+  }
+}
 
 /**
  * The duplicate report lets the user decide per group, but the backend resolves
@@ -56,5 +64,18 @@ export function buildResolutionRequests(
     }
   }
 
+  const keepers = new Set<string>();
+  const losers = new Set<string>();
+  for (const request of requests) {
+    if (request.action !== 'keepA') continue;
+    const keeper = canonicalPathKey(request.folderA) ?? request.folderA;
+    const loser = canonicalPathKey(request.folderB) ?? request.folderB;
+    if (losers.has(loser)) throw new DuplicateResolutionConflictError();
+    keepers.add(keeper);
+    losers.add(loser);
+  }
+  if ([...losers].some((loser) => keepers.has(loser))) {
+    throw new DuplicateResolutionConflictError();
+  }
   return requests;
 }

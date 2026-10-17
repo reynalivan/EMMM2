@@ -1,10 +1,7 @@
-use std::path::Path;
-
 use crate::modules::automation::application::keyviewer::models::KeyViewerPanel;
 use crate::modules::games::domain::models::GameType;
 use crate::shared::errors::AppError;
 
-use super::atomic::atomic_write;
 use super::keybind_text::keybind_file_name;
 
 fn text_api_namespace(game_type: GameType) -> Result<&'static str, AppError> {
@@ -116,6 +113,7 @@ fn resource_path(resource_root: &str, relative: &str) -> Result<String, AppError
 /// The observer uses resource-hash TextureOverrides only to set its own
 /// per-frame flags. Rendering happens before the `post` resets, so a detected
 /// character disappears on the next frame it is no longer rendered.
+#[cfg(test)]
 pub fn generate_keyviewer_ini(
     panels: &[KeyViewerPanel],
     toggle_key: &str,
@@ -126,6 +124,7 @@ pub fn generate_keyviewer_ini(
 
 /// Generate an entrypoint with independently configurable KeyViewer panels and
 /// preset status banner.
+#[cfg(test)]
 pub fn generate_keyviewer_ini_with_options(
     panels: &[KeyViewerPanel],
     toggle_key: &str,
@@ -146,6 +145,7 @@ pub fn generate_keyviewer_ini_with_options(
 /// Generate an entrypoint that reads text resources from the single stable
 /// `generations/` directory. The caller publishes that directory from a
 /// complete staging tree before refreshing the entrypoint.
+#[cfg(test)]
 pub fn generate_keyviewer_ini_for_resources(
     panels: &[KeyViewerPanel],
     toggle_key: &str,
@@ -343,14 +343,4 @@ pub fn generate_keyviewer_ini_for_resources_with_options(
     }
 
     Ok(lines.join("\n"))
-}
-
-pub fn write_keyviewer_ini(
-    output_path: &Path,
-    panels: &[KeyViewerPanel],
-    toggle_key: &str,
-    game_type: GameType,
-) -> Result<(), AppError> {
-    let content = generate_keyviewer_ini(panels, toggle_key, game_type)?;
-    atomic_write(output_path, &content)
 }

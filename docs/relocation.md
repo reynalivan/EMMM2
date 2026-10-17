@@ -1,24 +1,22 @@
-# Kesimpulan final
+# Architecture target
 
-Setelah saya pelajari ulang struktur aktual, TRD, hubungan antar-Epic, serta dokumentasi resmi FSD, Rust, Cargo, Tauri, TanStack Query, dan Zustand, saya mengoreksi kesimpulan sebelumnya:
+EMMM2 should use Feature-Sliced Design (FSD) in the frontend and a domain-oriented modular monolith in the Rust backend. Tauri should remain a thin inbound adapter and composition root. Complex backend modules can use application, domain, and ports/adapters boundaries where they provide clear value.
 
-> **Backend horizontal murni `commands → services → repo` bukan target terbaik untuk EMMM2 sebesar sekarang.**
+The best structure for EMMM2 is:
 
-Struktur terbaik untuk EMMM2 adalah:
-
-| Bagian                  | Arsitektur target                                                                   |
+| Area                    | Target architecture                                                                 |
 | ----------------------- | ----------------------------------------------------------------------------------- |
-| Frontend                | **Feature-Sliced Design yang benar-benar ditegakkan**                               |
-| Backend                 | **Modular Monolith berdasarkan domain/capability**                                  |
-| Internal backend module | **Application + Domain + Ports/Adapters**, hanya ketika kompleksitasnya membutuhkan |
-| Tauri                   | **Thin inbound adapter dan composition root**                                       |
+| Frontend                | **Enforced Feature-Sliced Design**                                                  |
+| Backend                 | **Domain/capability-based modular monolith**                                         |
+| Internal backend module | **Application + Domain + Ports/Adapters**, only when complexity warrants it          |
+| Tauri                   | **Thin inbound adapter and composition root**                                       |
 | Data consistency        | **Recoverable mutation workflow + operation journal + reconciliation**              |
 | Async frontend data     | **TanStack Query**                                                                  |
-| Client-only state       | **Zustand kecil dan dimiliki domain/widget terkait**                                |
+| Client-only state       | **Small Zustand stores owned by the relevant domain/widget**                        |
 
 ---
 
-# 1. Struktur repository target
+# 1. Target repository structure
 
 ```text
 EMMM2/
@@ -73,13 +71,13 @@ EMMM2/
 └── wdio.conf.ts
 ```
 
-Dokumentasi proyek berada di `docs/`, sehingga lebih mudah ditemukan oleh developer dan tooling standar.
+Project documentation lives in `docs/`, making it easier for developers and standard tooling to find.
 
 ---
 
-# 2. Frontend target: FSD yang benar
+# 2. Frontend target: properly applied FSD
 
-Official FSD menetapkan urutan layer:
+Official FSD defines this layer order:
 
 ```text
 app
@@ -90,9 +88,9 @@ entities
 shared
 ```
 
-Import hanya diperbolehkan menuju layer yang lebih rendah. Slice pada layer yang sama harus independen, dan akses dari luar slice harus melewati public API-nya. FSD juga menganjurkan segment berdasarkan tujuan seperti `ui`, `api`, `model`, `lib`, dan `config`, bukan generic grouping seperti `components`, `hooks`, atau `types`.
+Imports are allowed only toward lower layers. Slices on the same layer must be independent, and access from outside a slice must go through its public API. FSD also recommends grouping segments by purpose, such as `ui`, `api`, `model`, `lib`, and `config`, rather than using generic groupings such as `components`, `hooks`, or `types`.
 
-## Struktur frontend yang saya rekomendasikan
+## Recommended frontend structure
 
 ```text
 src/
@@ -290,9 +288,9 @@ src/
     └── assets/
 ```
 
-## Kenapa Folder Grid menjadi Widget?
+## Why should Folder Grid be a widget?
 
-`FolderGrid` sekarang mencakup:
+`FolderGrid` currently includes:
 
 - Toolbar
 - Breadcrumb
@@ -304,13 +302,13 @@ src/
 - Conflict handling
 - Modal orchestration
 
-Itu merupakan blok UI besar yang menyusun banyak entity dan feature. Definisi tersebut lebih tepat sebagai `widgets/mod-explorer`, bukan `features/folder-grid`. FSD mendefinisikan widget sebagai blok UI besar dan independen, khususnya ketika satu page mempunyai beberapa blok besar seperti sidebar, explorer, dan preview panel.
+It is a large UI block that composes many entities and features. It fits better as `widgets/mod-explorer` than `features/folder-grid`. FSD defines a widget as a large, independent UI block, especially when a page contains several large blocks such as a sidebar, explorer, and preview panel.
 
-## Jangan terlalu banyak membuat Feature
+## Avoid creating too many features
 
-Tidak setiap tombol perlu menjadi satu slice. FSD sendiri menyatakan tidak semua hal harus menjadi feature; layer ini paling berguna untuk interaksi penting atau interaksi yang digunakan pada beberapa screen.
+Not every button needs its own slice. FSD itself says that not everything needs to be a feature; this layer is most useful for important interactions or interactions used on multiple screens.
 
-Contoh `features/mod/toggle` yang sehat:
+A well-structured `features/mod/toggle` example:
 
 ```text
 features/mod/toggle/
@@ -334,44 +332,44 @@ export { ToggleModButton } from './ui/ToggleModButton';
 export { useToggleMod } from './model/useToggleMod';
 ```
 
-Internal slice menggunakan relative import. Slice lain hanya boleh:
+The slice uses relative imports internally. Other slices may only import it through:
 
 ```ts
 import { useToggleMod } from '@/features/mod/toggle';
 ```
 
-Bukan:
+Not through:
 
 ```ts
 import { useToggleMod } from '@/features/mod/toggle/model/useToggleMod';
 ```
 
-Public API harus mengekspos hanya kontrak yang dibutuhkan, bukan `export *`. Official FSD juga memperingatkan wildcard barrel karena memperbesar surface area dan dapat meningkatkan circular import.
+The public API should expose only the required contract, not `export *`. Official FSD also warns against wildcard barrels because they expand the surface area and can increase circular imports.
 
 ---
 
-# 3. Penempatan frontend state
+# 3. Frontend state ownership
 
-Project saat ini sudah membedakan Zustand untuk state dan TanStack Query untuk async state. Namun root `stores/` saat ini terlalu mudah menjadi pemilik semua state.
+The project currently distinguishes Zustand for client state from TanStack Query for async state. However, the root `stores/` directory can too easily become the owner of all state.
 
-Gunakan aturan berikut:
+Use these rules:
 
-| Jenis state                                    | Pemilik                       |
+| State type                                     | Owner                         |
 | ---------------------------------------------- | ----------------------------- |
-| Mods, objects, collections, settings dari Rust | TanStack Query                |
+| Mods, objects, collections, settings from Rust | TanStack Query                |
 | Loading/error/result async                     | TanStack Query                |
 | Active game session                            | `entities/game/model`         |
 | Privacy mode session                           | `entities/privacy-mode/model` |
 | Grid selection                                 | `widgets/mod-explorer/model`  |
 | Preview draft                                  | `widgets/mod-preview/model`   |
-| Form input sementara                           | Komponen/feature terkait      |
-| Theme dan lifecycle provider                   | `app`                         |
+| Temporary form input                           | Related component/feature     |
+| Theme and provider lifecycle                   | `app`                         |
 | Toast                                          | `shared/ui/toast`             |
-| Modal bisnis                                   | Feature/widget pemiliknya     |
+| Business modal                                 | Owning feature/widget         |
 
-TanStack Query ditujukan untuk server/async state, sementara Zustand adalah client-state manager. Dokumentasi TanStack menyebut bahwa setelah async state dipindahkan ke Query, global client state biasanya menjadi jauh lebih kecil.
+TanStack Query is intended for server/async state, while Zustand is a client-state manager. TanStack documentation notes that after async state moves to Query, global client state is usually much smaller.
 
-Jadi jangan menyimpan ulang:
+Therefore, do not duplicate these in Zustand:
 
 ```ts
 mods;
@@ -382,13 +380,13 @@ dashboardStats;
 settings;
 ```
 
-di Zustand apabila data yang sama sudah berada di backend dan TanStack Query.
+when the same data already lives in the backend and TanStack Query.
 
 ---
 
-# 4. Backend target: Modular Monolith, bukan horizontal global layers
+# 4. Backend target: modular monolith, not global horizontal layers
 
-Struktur sekarang:
+Current structure:
 
 ```text
 commands/
@@ -397,9 +395,9 @@ repo/
 services/
 ```
 
-sudah lebih baik daripada struktur awal TRD, tetapi pada skala saat ini menyebabkan satu perubahan feature tersebar ke empat pohon besar. TRD awal memang mendefinisikan `commands`, `database`, dan `services` sebagai horizontal layers.
+is better than the original TRD structure, but at the current scale a single feature change is spread across four large trees. The original TRD did define `commands`, `database`, and `services` as horizontal layers.
 
-Target yang lebih cocok:
+A better-fitting target:
 
 ```text
 src-tauri/src/
@@ -411,7 +409,7 @@ src-tauri/src/
 └── main.rs
 ```
 
-## Struktur backend final
+## Final backend structure
 
 ```text
 src-tauri/
@@ -506,9 +504,9 @@ src-tauri/
 
 ---
 
-# 5. Pembagian backend module
+# 5. Backend module boundaries
 
-| Module              | Tanggung jawab                                                     |
+| Module              | Responsibilities                                                   |
 | ------------------- | ------------------------------------------------------------------ |
 | `system`            | Bootstrap, app settings, maintenance, updater, log access          |
 | `games`             | Game registry, path validation, launcher configuration             |
@@ -523,21 +521,21 @@ src-tauri/
 | `browser`           | Webview, downloads, import jobs                                    |
 | `dashboard`         | Read-only aggregation and recent activity                          |
 
-Ini sengaja **tidak sama persis dengan 13 Epic**.
+This is intentionally **not an exact one-to-one match with the 13 Epics**.
 
-Contohnya:
+For example:
 
-- Epic 4 Folder Grid sebagian besar berada di frontend widget.
-- Epic 5 Core Operations berada di `library/application`.
-- Epic 6 Preview berada di frontend widget, tetapi INI dan metadata berada di `library`.
-- Epic 12 metadata sync masuk `catalog`, sedangkan app updater masuk `system`.
-- Epic 13 Dashboard cukup menjadi read-model module dan tidak membutuhkan domain model kompleks.
+- Epic 4 Folder Grid mostly belongs in a frontend widget.
+- Epic 5 Core Operations belongs in `library/application`.
+- Epic 6 Preview belongs in a frontend widget, while INI and metadata belong in `library`.
+- Epic 12 metadata sync belongs in `catalog`, while the app updater belongs in `system`.
+- Epic 13 Dashboard can be a read-model module and does not need a complex domain model.
 
 ---
 
-# 6. Isi sebuah backend module
+# 6. Contents of a backend module
 
-Contoh module kompleks `library`:
+Example of a complex `library` module:
 
 ```text
 modules/library/
@@ -551,7 +549,7 @@ modules/library/
 │   └── mod.rs
 │
 ├── application/
-│   ├── commands/                  # Business mutations, bukan Tauri commands
+│   ├── commands/                  # Business mutations, not Tauri commands
 │   │   ├── toggle_mod.rs
 │   │   ├── enable_only.rs
 │   │   ├── rename_mod.rs
@@ -592,7 +590,7 @@ modules/library/
 └── mod.rs
 ```
 
-Alur dependensinya:
+Dependency flow:
 
 ```text
 Tauri command
@@ -606,11 +604,11 @@ Outbound adapter
 SQLite / filesystem / HTTP
 ```
 
-Ini merupakan kombinasi vertical module dan Ports & Adapters: code dikelompokkan berdasarkan capability, sementara external systems tetap berada di luar application core. Vertical Slice mengelompokkan code berdasarkan axis of change, sedangkan Ports & Adapters memisahkan application core dari database, filesystem, UI, dan environment eksternal.
+This combines vertical modules and Ports & Adapters: code is grouped by capability, while external systems remain outside the application core. Vertical Slice groups code by axis of change, while Ports & Adapters separates the application core from the database, filesystem, UI, and external environment.
 
-## Jangan paksa semua module mempunyai semua folder
+## Do not force every module to have every directory
 
-Untuk `dashboard`, struktur sederhana cukup:
+For `dashboard`, a simple structure is enough:
 
 ```text
 modules/dashboard/
@@ -621,7 +619,7 @@ modules/dashboard/
 └── mod.rs
 ```
 
-Dashboard adalah read model. Tidak perlu membuat:
+Dashboard is a read model. There is no need to create:
 
 ```text
 domain/
@@ -631,15 +629,15 @@ services/
 factories/
 ```
 
-apabila tidak ada domain rule yang membutuhkan itu.
+if there are no domain rules that require them.
 
 ---
 
 # 7. Backend public API
 
-Rust private by default. Gunakan itu sebagai architecture enforcement, bukan menjadikan semua module `pub`. Official Rust documentation memang menjadikan implementation detail private secara default dan mendukung `pub use` untuk membuat public interface yang terpisah dari internal structure.
+Rust is private by default. Use this for architecture enforcement instead of making every module `pub`. Official Rust documentation keeps implementation details private by default and supports `pub use` to create a public interface separate from the internal structure.
 
-Contoh:
+Example:
 
 ```rust
 // modules/library/mod.rs
@@ -657,26 +655,26 @@ pub(crate) use application::dto::{
 };
 ```
 
-Module lain boleh:
+Other modules may use:
 
 ```rust
 use crate::modules::library::LibraryApi;
 ```
 
-Tetapi tidak boleh:
+But they must not use:
 
 ```rust
 use crate::modules::library::adapters::outbound::sqlx_mod_repository;
 use crate::modules::library::application::commands::toggle_mod;
 ```
 
-Cross-module operation harus melewati `facade.rs`.
+Cross-module operations must go through `facade.rs`.
 
 ---
 
-# 8. Tauri command harus sangat tipis
+# 8. Keep Tauri commands very thin
 
-Tauri commands adalah inbound adapter, bukan tempat business logic.
+Tauri commands are inbound adapters, not places for business logic.
 
 ```rust
 #[tauri::command]
@@ -692,7 +690,7 @@ async fn toggle_mod(
 }
 ```
 
-Yang tidak boleh ada di command:
+The following do not belong in a command:
 
 ```rust
 sqlx::query!(...)
@@ -702,9 +700,9 @@ notify(...)
 blake3::hash(...)
 ```
 
-Tauri mendukung command async dan merekomendasikannya untuk heavy work agar UI tidak freeze. Untuk progress streaming seperti scan, import, atau hashing, gunakan channel; event lebih cocok untuk small broadcast dan tidak dirancang untuk high-throughput streaming.
+Tauri supports async commands and recommends them for heavy work so the UI does not freeze. For streaming progress such as scanning, importing, or hashing, use a channel; events are better suited to small broadcasts and are not designed for high-throughput streaming.
 
-Gunakan typed error:
+Use a typed error:
 
 ```rust
 #[derive(Debug, serde::Serialize)]
@@ -717,23 +715,23 @@ pub struct AppErrorDto {
 }
 ```
 
-Jangan hanya:
+Do not use only:
 
 ```rust
 Result<T, String>
 ```
 
-Tauri mendukung custom serializable error representation sehingga frontend bisa memetakan error berdasarkan code, bukan parsing teks.
+Tauri supports custom serializable error representations, allowing the frontend to map errors by code instead of parsing text.
 
 ---
 
-# 9. Operation lock perlu dipindahkan
+# 9. Move the operation lock
 
-TRD lama mengatakan:
+The old TRD says:
 
-> Operation lock diperoleh di Command layer agar services reusable.
+> Acquire the operation lock in the Command layer so services remain reusable.
 
-Untuk struktur EMMM2 sekarang, aturan tersebut sudah tidak cukup karena mutation dapat dipicu oleh:
+For the current EMMM2 structure, this rule is no longer sufficient because mutations can be triggered by:
 
 - Tauri command
 - Hotkey
@@ -743,15 +741,15 @@ Untuk struktur EMMM2 sekarang, aturan tersebut sudah tidak cukup karena mutation
 - Watcher reconciliation
 - Startup repair
 
-Kalau lock hanya berada di Tauri command, entrypoint lain dapat melewatinya.
+If the lock exists only in Tauri commands, other entry points can bypass it.
 
-## Target baru
+## New target
 
 ```text
 app/runtime/mutation_coordinator.rs
 ```
 
-Semua destructive mutation harus melalui:
+All destructive mutations must go through:
 
 ```rust
 pub struct MutationCoordinator {
@@ -760,7 +758,7 @@ pub struct MutationCoordinator {
 }
 ```
 
-Alur:
+Flow:
 
 ```text
 Tauri / Hotkey / Recovery
@@ -772,19 +770,19 @@ Module use case
 Filesystem + SQLite
 ```
 
-Command hanya menerjemahkan `OperationBusy` menjadi toast/error DTO.
+Commands only translate `OperationBusy` into a toast/error DTO.
 
 ---
 
-# 10. Disk dan SQLite jangan disebut satu transaksi atomik
+# 10. Do not treat disk and SQLite as one atomic transaction
 
-EMMM2 mempunyai tiga bentuk truth:
+EMMM2 has three forms of truth:
 
-- Disk sebagai physical truth.
-- SQLite sebagai logical index.
-- `info.json` sebagai portable metadata.
+- Disk as physical truth.
+- SQLite as the logical index.
+- `info.json` as portable metadata.
 
-SQLite transaction tidak dapat secara otomatis me-rollback Windows filesystem rename. Karena itu, workflow terbaik bukan mengklaim keduanya sebagai satu transaksi, tetapi menggunakan **recoverable mutation**:
+A SQLite transaction cannot automatically roll back a Windows filesystem rename. Therefore, the best workflow does not claim that the two are one transaction; it uses a **recoverable mutation** instead:
 
 ```text
 1. Validate request
@@ -796,7 +794,7 @@ SQLite transaction tidak dapat secara otomatis me-rollback Windows filesystem re
 7. Emit frontend refresh
 ```
 
-Kalau crash:
+On a crash:
 
 ```text
 Startup
@@ -805,10 +803,10 @@ Read incomplete journal
    ↓
 Inspect disk state
    ↓
-Complete, compensate, atau reconcile
+   Complete, compensate, or reconcile
 ```
 
-Struktur:
+Structure:
 
 ```text
 app/runtime/
@@ -818,7 +816,7 @@ app/runtime/
 └── task_registry.rs
 ```
 
-Sedangkan:
+Meanwhile:
 
 ```text
 modules/workspace/
@@ -828,11 +826,11 @@ modules/workspace/
     └── watcher_projection.rs
 ```
 
-Ini lebih sesuai dengan hybrid truth model EMMM2 dan struktur `recovery`, `disk_reconcile`, serta `workspace_mutation` yang sebenarnya sudah mulai terbentuk di code saat ini.
+This better fits EMMM2's hybrid truth model and the `recovery`, `disk_reconcile`, and `workspace_mutation` structures already beginning to take shape in the current code.
 
 ---
 
-# 11. Pemetaan frontend sekarang ke target
+# 11. Mapping the current frontend to the target
 
 | Current                                     | Target                                                     |
 | ------------------------------------------- | ---------------------------------------------------------- |
@@ -847,30 +845,30 @@ Ini lebih sesuai dengan hybrid truth model EMMM2 dan struktur `recovery`, `disk_
 | `src/features/object-list`                  | `src/widgets/object-sidebar`                               |
 | `src/features/preview`                      | `src/widgets/mod-preview`                                  |
 | `src/features/launch-bar`                   | `src/widgets/launch-bar`                                   |
-| `src/shared/components/layout`              | `src/widgets/app-shell` dan `top-bar`                      |
+| `src/shared/components/layout`              | `src/widgets/app-shell` and `top-bar`                      |
 | `src/core/tauri`                            | `src/shared/api/tauri`                                     |
 | `src/core/lib/queryClient`                  | `src/app/providers`                                        |
 | `src/core/lib/i18n` + `src/locales`         | `src/shared/i18n`                                          |
 | `src/features/file-watcher`                 | `src/app/runtime` + `features/library/reconcile`           |
 | `src/features/runtime-sync`                 | `src/app/runtime/queryEventBridge`                         |
-| `src/features/workspace-runtime`            | `entities/workspace`, widget model, dan reconcile features |
-| `src/stores`                                | Didistribusikan ke owner masing-masing                     |
-| `src/types`                                 | Didistribusikan ke `entities/*/model`                      |
-| Generic `components/hooks/utils`            | `ui/model/lib/api` berdasarkan tanggung jawab              |
+| `src/features/workspace-runtime`            | `entities/workspace`, widget model, and reconcile features |
+| `src/stores`                                | Distributed to their respective owners                     |
+| `src/types`                                 | Distributed to `entities/*/model`                           |
+| Generic `components/hooks/utils`            | `ui/model/lib/api` based on responsibility                 |
 
 ---
 
-# 12. Pemetaan backend sekarang ke target
+# 12. Mapping the current backend to the target
 
 | Current                               | Target                                                                 |
 | ------------------------------------- | ---------------------------------------------------------------------- |
 | `commands/*`                          | `modules/*/adapters/inbound/tauri.rs`                                  |
 | `repo/*`                              | `modules/*/adapters/outbound/sqlx_*.rs`                                |
 | `domain/*`                            | `modules/*/domain`                                                     |
-| Business code dalam `services/*`      | `modules/*/application`                                                |
-| Generic I/O dalam `services/fs_utils` | `platform/fs`                                                          |
-| `services/images`                     | `platform/image` atau library outbound adapter                         |
-| `services/update`                     | `modules/system` dan `modules/catalog`                                 |
+| Business code in `services/*`         | `modules/*/application`                                                |
+| Generic I/O in `services/fs_utils`    | `platform/fs`                                                          |
+| `services/images`                     | `platform/image` or a library outbound adapter                         |
+| `services/update`                     | `modules/system` and `modules/catalog`                                 |
 | `services/match_engine`               | `modules/ingestion`                                                    |
 | `services/import_batch`               | `modules/ingestion`                                                    |
 | `services/mods`                       | `modules/library`                                                      |
@@ -881,9 +879,9 @@ Ini lebih sesuai dengan hybrid truth model EMMM2 dan struktur `recovery`, `disk_
 | `services/workspace*`                 | `modules/workspace`                                                    |
 | `services/projected_state`            | `modules/workspace`                                                    |
 | `services/disk_reconcile`             | `modules/workspace/application/reconcile`                              |
-| `pipeline/*`                          | `modules/collections/application/apply` jika hanya collection pipeline |
-| `common/*`                            | Module pemilik atau `shared` jika benar-benar generik                  |
-| `types/dup_scan.rs`                   | `modules/storage_optimizer/domain` atau `dto`                          |
+| `pipeline/*`                          | `modules/collections/application/apply` if only for collection pipeline |
+| `common/*`                            | Owning module or `shared` if truly generic                             |
+| `types/dup_scan.rs`                   | `modules/storage_optimizer/domain` or `dto`                            |
 
 ---
 
@@ -917,16 +915,16 @@ tests/e2e/
 └── support/
 ```
 
-Rust membedakan unit test yang berada dekat module dan dapat menguji private implementation, dengan integration test di directory `tests/` yang hanya memakai public interface.
+Rust distinguishes unit tests near a module, which can test private implementation, from integration tests in the `tests/` directory, which use only the public interface.
 
-Architecture test yang sudah ada seperti:
+Existing architecture tests such as:
 
 ```text
 arch_audit.rs
 dal_audit.rs
 ```
 
-sebaiknya dipertahankan dan diperluas untuk melarang:
+should be kept and expanded to prohibit:
 
 ```text
 domain -> sqlx
@@ -938,7 +936,7 @@ module A -> internal module B
 
 ---
 
-# 14. Aturan architecture yang harus masuk CI
+# 14. Architecture rules to enforce in CI
 
 ## Frontend
 
@@ -951,7 +949,7 @@ entities → shared
 shared   → shared only
 ```
 
-Tambahkan architecture lint. Dokumentasi FSD merekomendasikan architectural linter untuk mendeteksi deep import dan pelanggaran public API.
+Add architecture linting. FSD documentation recommends an architectural linter to detect deep imports and public API violations.
 
 ## Backend
 
@@ -979,7 +977,7 @@ cargo test
 
 ---
 
-# 15. Jangan lakukan ini
+# 15. Avoid these patterns
 
 ```text
 src/types/
@@ -988,7 +986,7 @@ src/hooks/
 src/components/
 ```
 
-sebagai global dumping ground.
+as a global dumping ground.
 
 ```text
 src-tauri/src/services/
@@ -997,49 +995,49 @@ src-tauri/src/models/
 src-tauri/src/types/
 ```
 
-sebagai tempat semua code yang tidak jelas pemiliknya.
+as a place for code with unclear ownership.
 
-Juga hindari:
+Also avoid:
 
-- Satu folder code per Epic secara buta.
-- Feature frontend mengimpor feature lain.
-- Deep import melewati public API.
-- `invoke()` tersebar di component.
-- SQLx query di Tauri command.
-- Filesystem mutation di repository.
-- Business rule di React component.
-- Menyalin backend data ke Zustand.
-- Trait untuk setiap struct meskipun tidak ada external boundary.
-- Memecah backend menjadi banyak Cargo crates sekarang hanya agar terlihat “clean”.
+- Blindly creating one code folder per Epic.
+- Frontend features importing other features.
+- Deep imports that bypass public APIs.
+- Scattering `invoke()` across components.
+- SQLx queries in Tauri commands.
+- Filesystem mutations in repositories.
+- Business rules in React components.
+- Copying backend data into Zustand.
+- Adding a trait for every struct when there is no external boundary.
+- Splitting the backend into many Cargo crates now just to look “clean.”
 
-Cargo workspace berguna ketika memang terdapat beberapa package yang perlu dikelola bersama, bukan kewajiban untuk aplikasi Rust besar. Rust module privacy sudah cukup kuat untuk menegakkan batas modular-monolith pada tahap ini.
-
----
-
-# 16. Urutan migrasi paling aman
-
-1. **Dokumentasikan dependency rules** dan tambahkan architecture lint terlebih dahulu.
-2. Buat `shared/api/tauri`, lalu larang `invoke()` langsung di tempat lain.
-3. Pindahkan frontend page yang sudah jelas: Dashboard, Settings, Browser, Collections.
-4. Pindahkan Folder Grid, Object List, dan Preview menjadi widgets.
-5. Tambahkan entity public APIs dan hilangkan root `types`.
-6. Backend: migrasikan `storage_optimizer` sebagai pilot karena batas domainnya jelas.
-7. Lanjutkan `collections`, `ingestion`, `system`, dan `browser`.
-8. Migrasikan `library` dan `workspace` terakhir karena paling kompleks.
-9. Masukkan semua destructive operations ke `MutationCoordinator`.
-10. Hapus folder legacy `commands/services/repo/common/types` setelah tidak memiliki import.
-
-Jangan melakukan big-bang migration. Satu module dapat dipindahkan, diberi facade, diuji, lalu folder lama dihapus setelah semua consumer berpindah.
+A Cargo workspace is useful when there are multiple packages to manage together; it is not required for a large Rust application. Rust module privacy is already strong enough to enforce modular-monolith boundaries at this stage.
 
 ---
 
-# Rekomendasi yang dipakai sebagai standar resmi
+# 16. Safest migration order
 
-Gunakan kalimat ini di dokumen architecture EMMM2:
+1. **Document dependency rules** and add architecture linting first.
+2. Create `shared/api/tauri`, then prohibit direct `invoke()` calls elsewhere.
+3. Move the clear frontend pages: Dashboard, Settings, Browser, Collections.
+4. Move Folder Grid, Object List, and Preview into widgets.
+5. Add entity public APIs and remove the root `types` directory.
+6. Backend: migrate `storage_optimizer` as a pilot because its domain boundary is clear.
+7. Continue with `collections`, `ingestion`, `system`, and `browser`.
+8. Migrate `library` and `workspace` last because they are the most complex.
+9. Route all destructive operations through `MutationCoordinator`.
+10. Remove the legacy `commands/services/repo/common/types` directories once nothing imports them.
+
+Do not perform a big-bang migration. Move one module, add its facade, test it, and then remove the old directory after all consumers have moved.
+
+---
+
+# Architecture standard
+
+Use the following standard in EMMM2 architecture documents:
 
 > **EMMM2 frontend follows Feature-Sliced Design with enforced downward dependencies and slice public APIs. The Rust backend is a domain-oriented modular monolith: each capability owns its application logic, domain rules, inbound adapters, and outbound adapters. Tauri acts as a thin interface and composition layer, while filesystem, SQLite, watcher, network, and process integrations remain replaceable infrastructure adapters.**
 
-Versi sederhananya:
+Summary:
 
 ```text
 Frontend:
@@ -1056,4 +1054,4 @@ Disk + SQLite:
 Recoverable workflow, journal, reconciliation
 ```
 
-**Ini target terbaik untuk EMMM2.** Struktur sekarang sudah menjadi fondasi yang cukup baik, tetapi final state sebaiknya bergerak dari **global horizontal backend layers** menuju **domain-oriented modular monolith**, sementara frontend dipisahkan secara benar menjadi `pages`, `widgets`, `features`, `entities`, dan `shared`.
+The target is a **domain-oriented modular monolith** rather than global horizontal backend layers, with the frontend organized into `pages`, `widgets`, `features`, `entities`, and `shared`.

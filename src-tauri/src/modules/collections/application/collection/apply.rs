@@ -89,6 +89,7 @@ async fn wait_for_apply_execution_barrier(game_id: &str) {
     }
 }
 
+#[cfg(test)]
 pub async fn apply_collection(
     request: ApplyCollectionRequest<'_>,
 ) -> Result<ApplyResult, CollectionError> {
@@ -96,7 +97,6 @@ pub async fn apply_collection(
         request,
         ActiveCollectionFinalization::RequestDefault,
         None,
-        false,
         None,
     )
     .await
@@ -110,7 +110,6 @@ pub async fn apply_collection_durable(
         request,
         ActiveCollectionFinalization::RequestDefault,
         Some(coordinator),
-        false,
         None,
     )
     .await
@@ -125,24 +124,7 @@ pub async fn apply_collection_durable_with_recovery(
         request,
         ActiveCollectionFinalization::RequestDefault,
         Some(coordinator),
-        false,
         recovery_id,
-    )
-    .await
-}
-
-/// Reapply a collection for a Safe Mode transition without touching enabled
-/// roots that are not owned by the selected managed collection.
-pub async fn apply_collection_durable_for_safe_mode(
-    request: ApplyCollectionRequest<'_>,
-    coordinator: &crate::modules::mutation::coordinator::MutationCoordinator,
-) -> Result<ApplyResult, CollectionError> {
-    apply_collection_with_finalization(
-        request,
-        ActiveCollectionFinalization::RequestDefault,
-        Some(coordinator),
-        true,
-        None,
     )
     .await
 }
@@ -150,6 +132,7 @@ pub async fn apply_collection_durable_for_safe_mode(
 /// Apply the Last changes draft while restoring its original active baseline.
 /// The baseline pointer and durable task completion are committed by the apply
 /// pipeline in the same transaction after the filesystem mutation succeeds.
+#[cfg(test)]
 pub async fn restore_collection_with_baseline(
     request: ApplyCollectionRequest<'_>,
     active_baseline_id: Option<String>,
@@ -158,7 +141,6 @@ pub async fn restore_collection_with_baseline(
         request,
         ActiveCollectionFinalization::Explicit(active_baseline_id),
         None,
-        false,
         None,
     )
     .await
@@ -173,7 +155,6 @@ pub async fn restore_collection_with_baseline_durable(
         request,
         ActiveCollectionFinalization::Explicit(active_baseline_id),
         Some(coordinator),
-        false,
         None,
     )
     .await
@@ -188,7 +169,6 @@ async fn apply_collection_with_finalization(
     request: ApplyCollectionRequest<'_>,
     finalization: ActiveCollectionFinalization,
     coordinator: Option<&crate::modules::mutation::coordinator::MutationCoordinator>,
-    restrict_current_state_to_target_scope: bool,
     recovery_id: Option<String>,
 ) -> Result<ApplyResult, CollectionError> {
     let pool = request.pool;
@@ -233,7 +213,6 @@ async fn apply_collection_with_finalization(
     };
     ctx.finalize_active_collection = true;
     ctx.final_active_collection_id = final_active_collection_id;
-    ctx.restrict_current_state_to_target_scope = restrict_current_state_to_target_scope;
     ctx.lock_recovery_id = recovery_id;
     #[cfg(test)]
     wait_for_apply_execution_barrier(&ctx.game_id).await;
@@ -275,11 +254,7 @@ async fn prepare_apply_context(
     )
     .await
     .map_err(task_error)?;
-    let mut ctx =
-        crate::modules::collections::application::apply::apply_pipeline::ApplyContext::new(request);
-    ctx.rollback_collection_id = rollback_collection_id;
-    ctx.rollback_active_collection_id = rollback_active_collection_id;
-    Ok(ctx)
+    Ok(crate::modules::collections::application::apply::apply_pipeline::ApplyContext::new(request))
 }
 
 pub(crate) async fn apply_collection_with_existing_task(

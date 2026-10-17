@@ -178,6 +178,7 @@ fn reject_occupied_destination_from_index(
     Ok(())
 }
 
+#[cfg(test)]
 fn rollback_pending(pending: &[PendingRename]) -> Result<(), AppError> {
     let mut failures = Vec::new();
     for rename in pending {
@@ -549,6 +550,7 @@ pub async fn rollback_folder_conflict_rename_plan_with_retry(
     rollback_pending_with_retry(plan, &plan.pending).await
 }
 
+#[cfg(test)]
 pub fn apply_folder_conflict_rename_plan(
     suppressor: &Arc<WatcherSuppressor>,
     plan: &FolderConflictRenamePlan,
@@ -597,6 +599,7 @@ pub fn apply_folder_conflict_rename_plan(
     Ok(plan.rewrites())
 }
 
+#[cfg(test)]
 pub fn rollback_folder_conflict_rename_plan(
     suppressor: &Arc<WatcherSuppressor>,
     plan: &FolderConflictRenamePlan,
@@ -609,6 +612,7 @@ pub fn rollback_folder_conflict_rename_plan(
     rollback_pending(&plan.pending)
 }
 
+#[cfg(test)]
 pub fn apply_folder_conflict_renames(
     mods_root: &Path,
     game_id: &str,

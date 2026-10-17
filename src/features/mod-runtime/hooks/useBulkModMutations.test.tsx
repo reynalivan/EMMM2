@@ -3,16 +3,14 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { useAppStore } from '@/app/store';
-import { useBulkDelete, useBulkToggle } from './useBulkModMutations';
+import { useBulkToggle } from './useBulkModMutations';
 
 const mocks = vi.hoisted(() => ({
   bulkToggleMods: vi.fn(),
-  bulkDeleteMods: vi.fn(),
   applyRuntimeEffects: vi.fn(),
   buildWorkspacePathRewritesDescriptor: vi.fn(() => ({})),
   cancelRuntimeDescriptorQueries: vi.fn(),
   publishRuntimeDescriptor: vi.fn(),
-  toastSuccess: vi.fn(),
 }));
 
 vi.mock('@tanstack/react-query', async () =>
@@ -23,13 +21,11 @@ vi.mock('../../../shared/api/tauri/bindings', () => ({
   sparse: (value: unknown) => value,
   commands: {
     bulkToggleMods: (...args: unknown[]) => mocks.bulkToggleMods(...args),
-    bulkDeleteMods: (...args: unknown[]) => mocks.bulkDeleteMods(...args),
   },
 }));
 
 vi.mock('@/features/workspace-runtime/@x/mod-runtime', () => ({
   applyRuntimeEffects: (...args: unknown[]) => mocks.applyRuntimeEffects(...args),
-  buildQueryRemovalDescriptor: vi.fn(() => ({})),
   buildRuntimeMutationDescriptor: vi.fn(() => ({})),
   buildWorkspacePathRewritesDescriptor: mocks.buildWorkspacePathRewritesDescriptor,
   collectionReferenceImpactRefreshEvents: vi.fn(() => []),
@@ -48,7 +44,7 @@ vi.mock('@/shared/lib/queryRefresh', () => ({
 
 vi.mock('@/shared/ui/toast', () => ({
   toast: {
-    success: (...args: unknown[]) => mocks.toastSuccess(...args),
+    success: vi.fn(),
     error: vi.fn(),
     info: vi.fn(),
   },
@@ -185,33 +181,5 @@ describe('bulk mod mutations', () => {
     );
     await waitFor(() => expect(mocks.publishRuntimeDescriptor).toHaveBeenCalled());
     finishRefresh();
-  });
-
-  it('suppresses delete feedback when the active game changes during refresh', async () => {
-    let finishRefresh!: () => void;
-    mocks.bulkDeleteMods.mockResolvedValue(bulkResult);
-    mocks.publishRuntimeDescriptor.mockReturnValue(
-      new Promise<void>((resolve) => {
-        finishRefresh = resolve;
-      }),
-    );
-    const { result } = renderHook(() => useBulkDelete(), { wrapper });
-
-    let pending!: Promise<unknown>;
-    act(() => {
-      pending = result.current.mutateAsync({
-        gameId: 'game-1',
-        paths: ['E:/Mods/Blue'],
-      });
-    });
-    await waitFor(() => expect(mocks.publishRuntimeDescriptor).toHaveBeenCalled());
-    useAppStore.setState({ activeGameId: 'game-2' });
-
-    await act(async () => {
-      finishRefresh();
-      await pending;
-    });
-
-    expect(mocks.toastSuccess).not.toHaveBeenCalled();
   });
 });

@@ -367,8 +367,8 @@ async refreshCatalogPack() : Promise<Result<CatalogPackRefreshResult, AppError>>
 }
 },
 /**
- * Check the fixed public catalog release channel. This is read-only and uses
- * no GitHub credentials from the user or the application.
+ * Check the installed pack's declared public GitHub release channel. This is
+ * read-only and uses no GitHub credentials from the user or the application.
  */
 async checkCatalogUpdate() : Promise<Result<CatalogUpdateCheck, AppError>> {
     try {

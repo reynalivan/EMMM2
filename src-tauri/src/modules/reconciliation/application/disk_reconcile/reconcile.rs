@@ -593,6 +593,9 @@ pub async fn reconcile_disk_projection(
         let read_model_time = read_model_started.elapsed();
         let commit_started = std::time::Instant::now();
         tx.commit().await?;
+        if write_outcome.objects_removed {
+            crate::modules::workspace::application::scanner::master_db::committed_object_removal();
+        }
         log::info!(
             "disk projection phases game_id={} initial_index_us={} identity_us={} objects_us={} mods_us={} metadata_within_mods_us={} finalization_us={} read_model_us={} commit_us={}",
             game_id,

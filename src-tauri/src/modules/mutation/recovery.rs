@@ -620,6 +620,17 @@ fn rollback_folder_create(
     let parent = crate::platform::fs::rename::PinnedDirectory::open(
         path.parent().expect("validated creation parent"),
     )?;
+    // New folder-create steps bind this field to the original staging parent.
+    // Older journals did not persist it and retain their child/root checks.
+    if step
+        .source_root_identity
+        .as_deref()
+        .is_some_and(|expected| expected != parent.identity())
+    {
+        return Err(AppError::Security(
+            "Folder creation recovery parent was replaced".to_string(),
+        ));
+    }
     let owned = crate::platform::fs::rename::PinnedDirectory::open_for_mutation(path)?;
     if owned.identity() != expected {
         return Err(AppError::Security(

@@ -32,8 +32,6 @@ pub struct ApplyContext {
     pub requested_target_state:
         Option<crate::modules::collections::domain::collection::ProjectedCollectionState>,
     pub defer_task_completion: bool,
-    pub rollback_collection_id: Option<String>,
-    pub rollback_active_collection_id: Option<String>,
 
     pub collection: Option<Collection>,
     pub target_mods: Vec<CollectionMod>,
@@ -98,8 +96,6 @@ impl ApplyContext {
             runtime_target_state: None,
             requested_target_state: None,
             defer_task_completion: false,
-            rollback_collection_id: None,
-            rollback_active_collection_id: None,
             collection: None,
             target_mods: Vec::new(),
             target_objects: Vec::new(),

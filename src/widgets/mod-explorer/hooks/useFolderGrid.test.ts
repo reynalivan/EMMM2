@@ -28,7 +28,6 @@ vi.mock('@/features/mod-runtime', async (importOriginal) => ({
 
 vi.mock('@/features/mod-runtime/hooks/useBulkModMutations', () => ({
   useBulkToggle: () => ({ mutate: vi.fn() }),
-  useBulkDelete: () => ({ mutate: vi.fn() }),
   useBulkFavorite: () => ({ mutate: vi.fn() }),
 }));
 

@@ -36,20 +36,12 @@ fn build_preview_descriptor(
     member: &CollectionMod,
     mods_path: Option<&str>,
 ) -> PreviewDescriptor {
-    if let Some(descriptor) = descriptor_from_stored_metadata(object, member) {
+    if let Some(descriptor) = descriptor_from_stored_metadata(member) {
         return descriptor;
     }
 
     let fallback_name = member.display_name.as_deref().unwrap_or("mod");
     let relative_segments = relative_segments_for_path(object, &member.mod_path, fallback_name);
-    if relative_segments.is_empty() {
-        return PreviewDescriptor {
-            display_path: member.mod_path.clone(),
-            node_type: NodeType::FlatModRoot,
-            warnings: Vec::new(),
-        };
-    }
-
     let terminal_path = resolve_collection_path(&member.mod_path, mods_path);
     if terminal_path.as_ref().is_some_and(|path| !path.exists()) {
         return PreviewDescriptor {
@@ -95,17 +87,9 @@ fn build_preview_descriptor(
     }
 }
 
-fn descriptor_from_stored_metadata(
-    object: Option<&CollectionObject>,
-    member: &CollectionMod,
-) -> Option<PreviewDescriptor> {
+fn descriptor_from_stored_metadata(member: &CollectionMod) -> Option<PreviewDescriptor> {
     let stored_path = member.preview_path.clone()?;
     let stored_type = node_type_from_str(member.node_type.as_deref()?)?;
-    let fallback_name = member.display_name.as_deref().unwrap_or("mod");
-    if relative_segments_for_path(object, &stored_path, fallback_name).is_empty() {
-        return None;
-    }
-
     Some(PreviewDescriptor {
         display_path: stored_path,
         node_type: stored_type,

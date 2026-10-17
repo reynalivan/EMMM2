@@ -264,3 +264,67 @@ async fn folder_create_recovery_rejects_non_staging_source_names() {
         OperationStatus::FailedNeedsRepair
     );
 }
+
+#[tokio::test]
+async fn folder_create_recovery_preserves_owned_child_reattached_under_replaced_parent() {
+    let fixture = tempfile::tempdir().unwrap();
+    let journal = crash_folder_create(fixture.path(), "promoted");
+    assert!(journal.entries()[0].steps[0].source_root_identity.is_some());
+    let parent = fixture.path().join("Mods/Object");
+    let old_parent = fixture.path().join("Mods/OriginalObject");
+    fs::rename(&parent, &old_parent).unwrap();
+    fs::create_dir(&parent).unwrap();
+    fs::rename(old_parent.join("Variants"), parent.join("Variants")).unwrap();
+
+    recovery(fixture.path(), Arc::clone(&journal))
+        .run_recovery()
+        .await
+        .unwrap();
+
+    assert!(parent.join("Variants").is_dir());
+    assert_eq!(
+        fs::read(old_parent.join("existing.txt")).unwrap(),
+        b"preserve existing asset"
+    );
+    assert_eq!(
+        journal.entries()[0].status,
+        OperationStatus::FailedNeedsRepair
+    );
+}
+
+#[tokio::test]
+async fn folder_create_recovery_accepts_legacy_step_without_parent_proof() {
+    let fixture = tempfile::tempdir().unwrap();
+    let root = fixture.path().join("Mods");
+    fs::create_dir(&root).unwrap();
+    fs::create_dir(fixture.path().join("staging")).unwrap();
+    let prepared = prepare_folder_create(&root, "Legacy").unwrap();
+    prepared.prepare().unwrap();
+    let mut step = prepared.journal_step().unwrap();
+    step.source_root_identity = None;
+    let journal = Arc::new(
+        OperationJournal::open(fixture.path().join("journal.json"), HISTORY_LIMIT).unwrap(),
+    );
+    let id = journal
+        .plan_operation(
+            crate::modules::mutation::api::OperationPlan::new(
+                FOLDER_CREATE_OPERATION_KIND,
+                GAME_ID,
+                vec![step],
+            )
+            .with_source_epoch(
+                crate::platform::fs::file_utils::filesystem_identity(&root).unwrap(),
+            ),
+        )
+        .unwrap();
+    journal.mark_applying(&id).unwrap();
+    prepared.promote().unwrap();
+
+    recovery(fixture.path(), Arc::clone(&journal))
+        .run_recovery()
+        .await
+        .unwrap();
+
+    assert!(!prepared.target.exists());
+    assert_eq!(journal.entries()[0].status, OperationStatus::RolledBack);
+}

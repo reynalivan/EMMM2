@@ -1,51 +1,51 @@
 # Epic 43: Dynamic KeyViewer Overlay
 
-> **Status kontrak: menggantikan bagian historis di bawah.** EMMM memanen INI
-> mod efektif lalu mencocokkan hanya `runtime_targets` catalog v2 yang
-> tervalidasi, ber-hash resource delapan heksadesimal, dan mempunyai callback
-> `checktextureoverride` aktif pada package yang terpasang. Shader hash 16
-> heksadesimal bukan sentinel. Tidak adanya catalog valid menghasilkan overlay
-> status-only dengan diagnosis `CatalogMissing` atau
-> `CatalogUpgradeRequired`; bukan teks `Runtime ready`.
+> **Contract status: replaces the historical section below.** EMMM harvests the INI
+> files of effective mods, then matches only validated v2 catalog
+> `runtime_targets` with eight-hexadecimal resource hashes and an active
+> `checktextureoverride` callback in the installed package. A 16-hexadecimal
+> shader hash is not a sentinel. If no valid catalog exists, the overlay is
+> status-only, with a `CatalogMissing` or
+> `CatalogUpgradeRequired`, not the text `Runtime ready`.
 >
-> Satu entrypoint milik EMMM berada di
-> `runtimeModsRoot/.emmm_data/KeyViewer.ini`. Semua resource runtime berada di
-> satu direktori aktif `runtimeModsRoot/.emmm_data/generations/`; direktori ini
-> ditulis lengkap di staging lalu ditukar atomically. Tidak ada folder
-> `generations/g...` atau snapshot versi yang dibiarkan untuk dibaca 3DMigoto.
-> Staging/recovery hanya boleh muncul sebagai sibling sementara dan dibersihkan
-> setelah game berhenti atau reload berhasil. Duplikat entrypoint hanya
-> dimigrasikan jika manifest/checksum ownership cocok; sampel atau file user
-> tidak diubah otomatis.
+> EMMM owns a single entry point at
+> `runtimeModsRoot/.emmm_data/KeyViewer.ini`. All runtime resources reside in
+> one active directory, `runtimeModsRoot/.emmm_data/generations/`; this directory
+> is fully written to staging and then swapped atomically. No `generations/g...`
+> folders or versioned snapshots are left for 3DMigoto to read. Staging/recovery
+> may appear only as temporary siblings and must be cleaned up after the game
+> exits or a reload succeeds. Duplicate entry points are migrated only when
+> manifest/checksum ownership matches; samples and user files are never changed
+> automatically.
 >
-> Entry point menggunakan `global persist $emmm_kv_active`, `type = cycle`,
-> flag deteksi integer per karakter, dan renderer langsung
-> `CommandList\<package namespace>\PrintText`. Ia merender status **dan**
-> setiap blok karakter aktif sebelum `[Present] post` menghapus flag frame.
-> Tidak ada `help.ini` Notification, timeout, TTL 1,5 detik, singleton text
-> slot, atau `$kv_active_code`. OFF berarti tidak ada pemanggilan renderer
-> EMMM. Setiap blok dibatasi 8 KiB/60 baris dan dapat ditandai terpotong;
-> preview aplikasi menyimpan data lengkap.
+> The entry point uses `global persist $emmm_kv_active`, `type = cycle`,
+> an integer detection flag per character, and the direct renderer
+> `CommandList\<package namespace>\PrintText`. It renders the status **and**
+> every active character block before `[Present] post` clears the frame flag.
+> There is no `help.ini` Notification, timeout, 1.5-second TTL, singleton text
+> slot, or `$kv_active_code`. OFF means EMMM makes no renderer calls. Each block
+> is limited to 8 KiB/60 lines and can be marked as truncated; the application
+> preview retains the complete data.
 >
-> **Sentinel geometry-first.** Harvest menyimpan target bertipe (`hash`,
-> `resource_kind`, callback slot, `match_first_index`, dan sumber INI), bukan
-> hash mentah. Satu panel memilih seluruh target pada tier aman tertinggi:
-> `position_vb`, lalu draw/vertex buffer, lalu index buffer dengan konteks
-> draw, lalu texture untuk mod face/texture-only. Body, Head, Dress, dan Face
-> tidak membuat panel tambahan. `match_priority = -100` hanya menandai observer
-> EMMM sebagai duplicate yang disengaja; ia bukan input pemilihan sentinel.
+> **Geometry-first sentinel.** Harvesting stores typed targets (`hash`,
+> `resource_kind`, callback slot, `match_first_index`, and INI source), not raw
+> hashes. A single panel selects all targets from the highest safe tier:
+> `position_vb`, then draw/vertex buffer, then index buffer with draw context,
+> then texture for face/texture-only mods. Body, Head, Dress, and Face do not
+> create additional panels. `match_priority = -100` only marks the EMMM observer
+> as an intentional duplicate; it is not an input to sentinel selection.
 >
-> Bila catalog v2 tidak ada atau belum dapat mengidentifikasi mod, fallback
-> tetap memanen INI aktif dan memakai nama folder terminal saja. Folder yang
-> berbagi sentinel geometry digabung menjadi satu panel (`Mod A + 1`) dengan
-> sumber binding `[Mod: …]`; collision IB/texture yang tidak dapat dibedakan
-> tidak dipilih. Shader hash 16 heksadesimal tidak pernah menjadi observer.
+> If the v2 catalog is missing or cannot yet identify a mod, the fallback still
+> harvests active INI files and uses only the terminal folder name. Folders that
+> share a geometry sentinel are combined into one panel (`Mod A + 1`) with the
+> binding source `[Mod: …]`; indistinguishable IB/texture collisions are not
+> selected. A 16-hexadecimal shader hash is never an observer.
 >
-> Binding berasal dari `key`, `back`, `type`, dan `condition` INI yang dipanen.
-> Modifier negatif seperti `NO_CTRL` tetap utuh. Label `Toggle` hanya dipakai
-> untuk binding bertipe toggle. `F7` di footer, INI, dan Settings berasal dari
-> satu setting overlay. Teks lama di bawah adalah sejarah audit dan tidak
-> menjadi acceptance criteria implementasi baru.
+> Bindings come from the harvested INI `key`, `back`, `type`, and `condition`
+> fields. Negative modifiers such as `NO_CTRL` remain intact. The `Toggle` label
+> is used only for toggle-type bindings. `F7` in the footer, INI, and Settings
+> comes from one overlay setting. The old text below is audit history and is
+> not an acceptance criterion for the new implementation.
 
 ## 1. Executive Summary
 

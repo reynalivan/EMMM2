@@ -30,7 +30,7 @@ describe('useWorkspaceExplorerSelection', () => {
     );
 
     act(() => result.current.selectAllMatching());
-    act(() => result.current.togglePath('C:/Mods/skip', true));
+    act(() => result.current.removePaths(['C:/Mods/skip']));
 
     expect(result.current.selection).toMatchObject({
       mode: 'all_matching',
@@ -162,7 +162,7 @@ describe('useWorkspaceExplorerSelection', () => {
       { initialProps: { totalMatching: 100_000 } },
     );
     act(() => result.current.selectAllMatching());
-    act(() => result.current.togglePath('C:/Mods/skip', true));
+    act(() => result.current.removePaths(['C:/Mods/skip']));
 
     rerender({ totalMatching: 100_010 });
 
@@ -185,7 +185,7 @@ describe('useWorkspaceExplorerSelection', () => {
       { initialProps: { loadedPaths: ['C:/Mods/A'] } },
     );
     act(() => result.current.selectAllMatching());
-    act(() => result.current.togglePath('C:/Mods/A', true));
+    act(() => result.current.removePaths(['C:/Mods/A']));
     expect(result.current.selectedCount).toBe(0);
 
     rerender({ loadedPaths: ['C:/Mods/B'] });

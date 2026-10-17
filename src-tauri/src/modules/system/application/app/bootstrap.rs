@@ -207,9 +207,8 @@ pub fn init_hotkey_manager(
     app_handle: &tauri::AppHandle,
     hotkey_config: &crate::modules::automation::application::hotkeys::HotkeyConfig,
 ) -> crate::modules::automation::application::hotkeys::manager::HotkeyManager {
-    let hk_manager = crate::modules::automation::application::hotkeys::manager::HotkeyManager::new(
-        hotkey_config,
-    );
+    let hk_manager =
+        crate::modules::automation::application::hotkeys::manager::HotkeyManager::new();
     if let Err(error) = hk_manager.update_bindings(app_handle, hotkey_config) {
         log::warn!("startup: hotkey registration failed, continuing disabled: {error}");
     }

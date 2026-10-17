@@ -1,6 +1,43 @@
 use super::*;
 
 #[tokio::test]
+async fn collection_regression_rename_reports_actual_active_status() {
+    for active_id in [Some("renamed"), Some("other"), None] {
+        let ctx = init_test_db().await;
+        seed_game(&ctx.pool, "game-1", Some("E:/Mods")).await;
+        for (id, name) in [("renamed", "Original"), ("other", "Other")] {
+            collection::create(&ctx.pool, id, "game-1", name, true, false)
+                .await
+                .unwrap();
+        }
+        if active_id.is_some() {
+            collection::runtime::set_active(&ctx.pool, "game-1", active_id)
+                .await
+                .unwrap();
+        }
+
+        let summary = update_collection(
+            &ctx.pool,
+            UpdateCollectionInput {
+                id: "renamed".to_string(),
+                game_id: "game-1".to_string(),
+                name: Some("Renamed".to_string()),
+            },
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(summary.name, "Renamed");
+        assert_eq!(summary.is_active, active_id == Some("renamed"));
+        let actual_active = collection::runtime::get(&ctx.pool, "game-1")
+            .await
+            .unwrap()
+            .and_then(|runtime| runtime.active_collection_id);
+        assert_eq!(actual_active.as_deref(), active_id);
+    }
+}
+
+#[tokio::test]
 async fn update_collection_rejects_collection_from_another_game() {
     let ctx = init_test_db().await;
     seed_game(&ctx.pool, "game-1", Some("E:/Mods1")).await;

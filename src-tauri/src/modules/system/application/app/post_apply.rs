@@ -1554,13 +1554,15 @@ fn request_sync_revision_with_request(
     Ok(state.revision)
 }
 
+#[cfg(test)]
 fn request_sync_revision(game_id: &str) -> Result<u64, AppError> {
     request_sync_revision_with_request(game_id, RuntimeSyncRequest::Full, true)
 }
 
 /// Reserve an explicit full-recovery generation for backward-compatible
 /// callers. Full requests dominate any unprocessed incremental request.
-pub fn reserve_overlay_sync_revision(game_id: &str) -> Result<u64, AppError> {
+#[cfg(test)]
+pub(crate) fn reserve_overlay_sync_revision(game_id: &str) -> Result<u64, AppError> {
     request_sync_revision(game_id)
 }
 
@@ -2067,15 +2069,25 @@ fn disable_owned_entrypoint(emmm_data_dir: &std::path::Path) -> Result<bool, App
             entrypoint.display()
         )));
     }
-    let disabled = emmm_data_dir.join("KeyViewer.ini.emmm-disabled");
-    if disabled.exists() {
-        return Err(AppError::Validation(format!(
-            "OverlayDisablePending: backup already exists at {}; resolve it before disabling the overlay",
-            disabled.display()
-        )));
+    let mut disabled = emmm_data_dir.join("KeyViewer.ini.emmm-disabled");
+    loop {
+        match std::fs::symlink_metadata(&disabled) {
+            Ok(_) => {
+                disabled = emmm_data_dir.join(format!(
+                    "KeyViewer.ini.emmm-disabled-{}",
+                    uuid::Uuid::new_v4().simple()
+                ));
+                continue;
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(error.into()),
+        }
+        match crate::platform::fs::rename::rename_no_replace(&entrypoint, &disabled) {
+            Ok(()) => return Ok(true),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => continue,
+            Err(error) => return Err(error.into()),
+        }
     }
-    std::fs::rename(entrypoint, disabled)?;
-    Ok(true)
 }
 
 fn normalized_windows_path(path: &std::path::Path) -> String {
@@ -2238,7 +2250,7 @@ fn recover_duplicate_migration(emmm_data_dir: &Path, entrypoint: &Path) -> Resul
                 backup: entry.backup.clone(),
             })
             .collect::<Vec<_>>();
-        rollback_duplicate_keyviewer_migrations(&migrations);
+        rollback_duplicate_keyviewer_migrations(&migrations)?;
     }
     clear_duplicate_migration_journal(emmm_data_dir)
 }
@@ -2281,30 +2293,78 @@ fn migrate_duplicate_keyviewer_entrypoints(
     let mut migrated = Vec::new();
     for migration in migrations {
         let MigratedEntrypoint { original, backup } = migration;
-        if let Err(error) = std::fs::rename(&original, &backup) {
-            rollback_duplicate_keyviewer_migrations(&migrated);
-            let _ = clear_duplicate_migration_journal(emmm_data_dir);
-            return Err(AppError::Io(format!(
-                "DuplicateOverlay: could not back up {}: {error}",
-                original.display()
-            )));
+        if let Err(error) = crate::platform::fs::rename::rename_no_replace(&original, &backup) {
+            return Err(rollback_duplicate_migration_after_error(
+                emmm_data_dir,
+                &migrated,
+                AppError::Io(format!(
+                    "DuplicateOverlay: could not back up {}: {error}",
+                    original.display()
+                )),
+            ));
         }
         migrated.push(MigratedEntrypoint { original, backup });
     }
     Ok(migrated)
 }
 
-fn rollback_duplicate_keyviewer_migrations(migrated: &[MigratedEntrypoint]) {
+fn rollback_duplicate_keyviewer_migrations(
+    migrated: &[MigratedEntrypoint],
+) -> Result<(), AppError> {
+    let mut failures = Vec::new();
     for entrypoint in migrated.iter().rev() {
-        if entrypoint.backup.exists() && !entrypoint.original.exists() {
-            if let Err(error) = std::fs::rename(&entrypoint.backup, &entrypoint.original) {
-                log::error!(
-                    "Could not restore legacy EMMM overlay {} from {}: {error}",
-                    entrypoint.original.display(),
-                    entrypoint.backup.display()
-                );
+        // A journal is written before any move, and retries can include entries
+        // already restored by an earlier partial rollback.
+        match std::fs::symlink_metadata(&entrypoint.backup) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                match std::fs::symlink_metadata(&entrypoint.original) {
+                    Ok(_) => continue,
+                    Err(error) => failures.push(format!(
+                        "Neither a usable backup nor original is available for {}: {error}",
+                        entrypoint.original.display()
+                    )),
+                }
+            }
+            Err(error) => failures.push(format!(
+                "Could not inspect legacy EMMM overlay backup {}: {error}",
+                entrypoint.backup.display()
+            )),
+            Ok(_) => {
+                if let Err(error) = crate::platform::fs::rename::rename_no_replace(
+                    &entrypoint.backup,
+                    &entrypoint.original,
+                ) {
+                    failures.push(format!(
+                        "Could not restore legacy EMMM overlay {} from {}: {error}",
+                        entrypoint.original.display(),
+                        entrypoint.backup.display()
+                    ));
+                }
             }
         }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(AppError::Io(format!(
+            "DuplicateOverlayMigrationRecovery: {}; migration journal retained for retry",
+            failures.join("; ")
+        )))
+    }
+}
+
+fn rollback_duplicate_migration_after_error(
+    emmm_data_dir: &Path,
+    migrations: &[MigratedEntrypoint],
+    original_error: AppError,
+) -> AppError {
+    match rollback_duplicate_keyviewer_migrations(migrations)
+        .and_then(|()| clear_duplicate_migration_journal(emmm_data_dir))
+    {
+        Ok(()) => original_error,
+        Err(recovery_error) => AppError::Io(format!(
+            "{original_error}; duplicate overlay rollback also failed: {recovery_error}"
+        )),
     }
 }
 
@@ -3081,16 +3141,20 @@ async fn run_post_apply_tasks_with_options(
         )?;
         if let Some(content) = legacy_entrypoint.as_deref() {
             if let Err(error) = preserve_legacy_entrypoint(&entrypoint, content) {
-                rollback_duplicate_keyviewer_migrations(&migrated_entrypoints);
-                let _ = clear_duplicate_migration_journal(&emmm_data_dir);
-                return Err(error);
+                return Err(rollback_duplicate_migration_after_error(
+                    &emmm_data_dir,
+                    &migrated_entrypoints,
+                    error,
+                ));
             }
         }
         let manifest_file = manifest_path(&emmm_data_dir);
         if let Err(error) = generator::atomic_write(&manifest_file, &manifest_content) {
-            rollback_duplicate_keyviewer_migrations(&migrated_entrypoints);
-            let _ = clear_duplicate_migration_journal(&emmm_data_dir);
-            return Err(error);
+            return Err(rollback_duplicate_migration_after_error(
+                &emmm_data_dir,
+                &migrated_entrypoints,
+                error,
+            ));
         }
         if let Err(error) = generator::atomic_write(&entrypoint, &kv_ini_content) {
             match previous_manifest.as_deref() {
@@ -3101,9 +3165,11 @@ async fn run_post_apply_tasks_with_options(
                     let _ = std::fs::remove_file(&manifest_file);
                 }
             }
-            rollback_duplicate_keyviewer_migrations(&migrated_entrypoints);
-            let _ = clear_duplicate_migration_journal(&emmm_data_dir);
-            return Err(error);
+            return Err(rollback_duplicate_migration_after_error(
+                &emmm_data_dir,
+                &migrated_entrypoints,
+                error,
+            ));
         }
         if let Err(error) = clear_duplicate_migration_journal(&emmm_data_dir) {
             // The entrypoint is already the durable publication point. A
@@ -3155,6 +3221,7 @@ fn post_apply_context_for_game(
     })
 }
 
+#[cfg(test)]
 fn refresh_context_from_persisted_settings(
     mut context: PostApplyContext,
     settings: &crate::modules::settings::application::config::AppSettings,
@@ -3270,53 +3337,6 @@ async fn request_overlay_sync_for_game_with_request(
         Some(revision),
         Some(activation_authority),
         request,
-    )
-    .await
-}
-
-/// Variant used by committed mutation pipelines that already prepared the
-/// status fields for the generation. It still uses the same game-scoped gate;
-/// callers cannot bypass publication ordering by carrying a custom context.
-pub async fn request_overlay_sync_with_context(
-    context: PostApplyContext,
-    cause: OverlaySyncCause,
-) -> Result<RuntimeSyncResult, AppError> {
-    let game_id = context.game_id.clone();
-    let revision = request_sync_revision(&game_id)?;
-    let lock = sync_lock_for_game(&game_id)?;
-    let lock_wait_started = std::time::Instant::now();
-    let _guard = lock.lock().await;
-    log::debug!(
-        "RuntimeSync game_id={game_id} revision={revision} game_lock_wait_ms={}",
-        lock_wait_started.elapsed().as_millis()
-    );
-    if !is_current_sync_revision(&game_id, revision)? {
-        return Ok(superseded_sync_result(cause));
-    }
-    // A collection operation may have captured settings before it waited for
-    // this per-game lock. Refresh only the persisted settings-derived fields
-    // here, preserving its post-mutation status override, so it cannot publish
-    // a stale shortcut/root over a newer Settings request.
-    let settings =
-        crate::modules::settings::application::config::ConfigService::load_from_db(&context.pool)
-            .await?;
-    if settings.active_game_id.as_deref() != Some(game_id.as_str()) {
-        return Ok(superseded_sync_result(cause));
-    }
-    let Some(activation_authority) = ActivationAuthority::current_for(&game_id) else {
-        return Ok(superseded_sync_result(cause));
-    };
-    let context = refresh_context_from_persisted_settings(context, &settings)?;
-    if !is_current_sync_revision(&game_id, revision)? {
-        return Ok(superseded_sync_result(cause));
-    }
-    synchronize_overlay_context(
-        context,
-        cause,
-        Some(settings),
-        Some(revision),
-        Some(activation_authority),
-        RuntimeSyncRequest::Full,
     )
     .await
 }
@@ -5904,6 +5924,139 @@ mod tests {
     }
 
     #[test]
+    fn repeated_overlay_disable_preserves_existing_backups() {
+        let temp = TempDir::new().unwrap();
+        let entrypoint = temp.path().join("KeyViewer.ini");
+        let backup = temp.path().join("KeyViewer.ini.emmm-disabled");
+        let first = "; EMMM-Artifact: KeyViewer v1\nnamespace = EMMMv1\n; first";
+        let second = "; EMMM-Artifact: KeyViewer v1\nnamespace = EMMMv1\n; second";
+        std::fs::write(&entrypoint, first).unwrap();
+        assert!(disable_owned_entrypoint(temp.path()).unwrap());
+        std::fs::write(&entrypoint, second).unwrap();
+        assert!(disable_owned_entrypoint(temp.path()).unwrap());
+        assert!(!entrypoint.exists());
+        assert_eq!(std::fs::read_to_string(&backup).unwrap(), first);
+        let contents = std::fs::read_dir(temp.path())
+            .unwrap()
+            .map(|entry| std::fs::read_to_string(entry.unwrap().path()).unwrap())
+            .collect::<Vec<_>>();
+        assert!(contents.contains(&second.to_string()));
+    }
+
+    #[test]
+    fn duplicate_recovery_preserves_journal_when_original_conflicts() {
+        let temp = TempDir::new().unwrap();
+        let mods = temp.path().join("Mods");
+        let emmm_data = mods.join(".emmm_data");
+        let duplicate = mods.join("Legacy/KeyViewer.ini");
+        std::fs::create_dir_all(duplicate.parent().unwrap()).unwrap();
+        let owned = "; EMMM-Artifact: KeyViewer v1\nnamespace = EMMMv1";
+        std::fs::write(&duplicate, owned).unwrap();
+        let migrated = migrate_duplicate_keyviewer_entrypoints(
+            std::slice::from_ref(&mods),
+            &mods,
+            &emmm_data,
+            "g100-1-0",
+        )
+        .unwrap();
+        std::fs::write(&duplicate, "user replacement").unwrap();
+        assert!(recover_duplicate_migration(&emmm_data, &emmm_data.join("KeyViewer.ini")).is_err());
+        assert!(duplicate_migration_journal_path(&emmm_data).exists());
+        assert_eq!(
+            std::fs::read_to_string(&duplicate).unwrap(),
+            "user replacement"
+        );
+        assert_eq!(std::fs::read_to_string(&migrated[0].backup).unwrap(), owned);
+        std::fs::remove_file(&duplicate).unwrap();
+        recover_duplicate_migration(&emmm_data, &emmm_data.join("KeyViewer.ini")).unwrap();
+        assert_eq!(std::fs::read_to_string(&duplicate).unwrap(), owned);
+        assert!(!duplicate_migration_journal_path(&emmm_data).exists());
+    }
+
+    #[test]
+    fn overlay_disable_preserves_unknown_backup_and_uses_non_ini_name() {
+        let temp = TempDir::new().unwrap();
+        let entrypoint = temp.path().join("KeyViewer.ini");
+        let backup = temp.path().join("KeyViewer.ini.emmm-disabled");
+        std::fs::write(&backup, "unknown backup").unwrap();
+        let owned = "; EMMM-Artifact: KeyViewer v1\nnamespace = EMMMv1";
+        std::fs::write(&entrypoint, owned).unwrap();
+        disable_owned_entrypoint(temp.path()).unwrap();
+        assert!(!entrypoint.exists());
+        assert_eq!(std::fs::read_to_string(backup).unwrap(), "unknown backup");
+        let paths = std::fs::read_dir(temp.path())
+            .unwrap()
+            .map(|entry| entry.unwrap().path())
+            .collect::<Vec<_>>();
+        assert_eq!(paths.len(), 2);
+        assert!(paths
+            .iter()
+            .all(|path| path.extension().is_none_or(|extension| extension != "ini")));
+        assert!(paths
+            .iter()
+            .any(|path| std::fs::read_to_string(path).unwrap() == owned));
+    }
+
+    #[test]
+    fn duplicate_rollback_reports_original_failure_and_keeps_unsettled_journal() {
+        let temp = TempDir::new().unwrap();
+        let original = temp.path().join("Legacy/KeyViewer.ini");
+        let migrations = vec![MigratedEntrypoint {
+            backup: original.with_extension("ini.emmm-backup"),
+            original,
+        }];
+        write_duplicate_migration_journal(temp.path(), "g100-1-0", &migrations).unwrap();
+        let error = rollback_duplicate_migration_after_error(
+            temp.path(),
+            &migrations,
+            AppError::Io("original publication failure".into()),
+        );
+        assert!(error.to_string().contains("original publication failure"));
+        assert!(error.to_string().contains("rollback also failed"));
+        assert!(duplicate_migration_journal_path(temp.path()).exists());
+        assert!(
+            recover_duplicate_migration(temp.path(), &temp.path().join("KeyViewer.ini")).is_err()
+        );
+        assert!(duplicate_migration_journal_path(temp.path()).exists());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn duplicate_recovery_preserves_journal_until_locked_backup_can_restore() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let temp = TempDir::new().unwrap();
+        let mods = temp.path().join("Mods");
+        let emmm_data = mods.join(".emmm_data");
+        let duplicate = mods.join("Legacy/KeyViewer.ini");
+        let other_duplicate = mods.join("Other/KeyViewer.ini");
+        std::fs::create_dir_all(duplicate.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(other_duplicate.parent().unwrap()).unwrap();
+        let owned = "; EMMM-Artifact: KeyViewer v1\nnamespace = EMMMv1";
+        std::fs::write(&duplicate, owned).unwrap();
+        std::fs::write(&other_duplicate, owned).unwrap();
+        let migrated = migrate_duplicate_keyviewer_entrypoints(
+            std::slice::from_ref(&mods),
+            &mods,
+            &emmm_data,
+            "g100-1-0",
+        )
+        .unwrap();
+        let holder = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(3)
+            .open(&migrated[0].backup)
+            .unwrap();
+        assert!(recover_duplicate_migration(&emmm_data, &emmm_data.join("KeyViewer.ini")).is_err());
+        assert!(duplicate_migration_journal_path(&emmm_data).exists());
+        assert!(!duplicate.exists());
+        assert_eq!(std::fs::read_to_string(&other_duplicate).unwrap(), owned);
+        drop(holder);
+        recover_duplicate_migration(&emmm_data, &emmm_data.join("KeyViewer.ini")).unwrap();
+        assert_eq!(std::fs::read_to_string(&duplicate).unwrap(), owned);
+        assert!(!duplicate_migration_journal_path(&emmm_data).exists());
+    }
+
+    #[test]
     fn disabling_only_touches_a_verified_emmm_entrypoint() {
         let temp = TempDir::new().unwrap();
         let emmm_data = temp.path().join(".emmm_data");
@@ -6010,7 +6163,7 @@ mod tests {
         assert!(migrated[0].backup.exists());
         assert!(duplicate_migration_journal_path(&emmm_data).exists());
 
-        rollback_duplicate_keyviewer_migrations(&migrated);
+        rollback_duplicate_keyviewer_migrations(&migrated).unwrap();
         clear_duplicate_migration_journal(&emmm_data).unwrap();
         assert!(duplicate.exists());
     }
