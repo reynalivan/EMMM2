@@ -1,17 +1,38 @@
-# EMMM Mod Manager
+# EMMM — 3DMigoto Mod Manager
 
-EMMM is a desktop mod manager for 3DMigoto-based games. It keeps the filesystem as the source of truth while providing a fast workspace for organizing, previewing, importing, and launching game-specific mod libraries.
+EMMM is an open-source Windows desktop manager for GIMI, SRMI, ZZMI, WWMI, and EFMI mod libraries. Point it at the folders you already use, including libraries spread across multiple locations. EMMM follows your layout instead of requiring you to rebuild it around the manager.
 
-The project currently targets Genshin Impact, Honkai: Star Rail, Zenless Zone Zero, Wuthering Waves, and Arknights: Endfield through their XXMI-compatible workflows. EMMM is an independent third-party tool and is not affiliated with any game developer, publisher, or platform.
+It is an independent third-party project and is not affiliated with any game developer, publisher, or platform.
 
-## What it does
+## What you can do
 
-- Organizes mods by game, object, and folder, with grid and list views that remain usable for large libraries.
-- Reads the enabled state from the folder name on disk. A `DISABLED ` prefix disables a mod; SQLite indexes metadata and hierarchy for search and filtering.
-- Imports archives and folders, detects common nested layouts, and keeps Mod Inbox, Downloads, Collections, and the browser scoped to the selected game.
-- Provides previews, metadata editing, INI inspection, bulk actions, safe-mode controls, and a trash-based removal flow.
-- Saves and applies collections, scans for duplicate files, and offers a guided matching and classification workflow for unstructured folders.
-- Watches the library for external changes and reconciles the local index with the filesystem.
+### Import and classify mods
+
+Drop a mod folder or a `.zip`, `.7z`, or `.rar` archive into Mod Inbox. EMMM detects mod roots inside nested downloads, then suggests an identity and destination using available INI hashes, [catalog](https://github.com/reynalivan/3dm-catalog-asset) records, aliases, and folder names. You review ambiguous matches and placement before applying them. The catalog can also add available metadata and thumbnails to matched objects.
+
+### Work with your own folders
+
+Browse by game and object in grid or list view, open nested folders, and use breadcrumbs to go back. Search and filter by available names, categories, and metadata; pin the mods you return to often. Enable or disable a mod, use **Enable Only This** to compare alternatives in a group, or apply bulk actions. A `DISABLED ` folder prefix records the enabled state on disk, while SQLite indexes the library for browsing.
+
+EMMM watches relevant folder, INI, metadata, and image changes, so edits made in File Explorer can be reconciled with the app's view.
+
+### See your mods and controls
+
+EMMM detects images in mod folders. Choose a preview or paste a thumbnail from the clipboard; edit metadata and inspect INI files in the app. Detected keybinds from active mods appear in a searchable view. For supported runtime matches, the optional in-game KeyViewer shows bindings and status; **F7** toggles the overlay.
+
+### Save setups and maintain the library
+
+Save collections and switch between them while the game is in the foreground with **Shift+F5** and **Ctrl+F5**. **F5** toggles Safe Mode, which limits the active setup to mods you have classified as Safe. Storage Optimizer helps you inspect duplicate files before deciding what to clean up.
+
+The normal **Remove Mod** action sends the folder to the OS Recycle Bin. Keep a separate backup before large imports or reorganizations.
+
+## Catalog data
+
+The separate [3DM Catalog Asset](https://github.com/reynalivan/3dm-catalog-asset) supplies known identities, aliases, hashes, available metadata and images, and reviewed KeyViewer runtime targets. It contains no game mods or manager executable. In EMMM, open **Settings > Catalog Assets** to check the official catalog release channel, or use **Install from ZIP** to review and install a downloaded `catalog-pack.zip`. Catalog coverage differs by game and entry; matching suggestions still need your review.
+
+## Getting started
+
+EMMM is currently developed for Windows. This repository contains the application source and development instructions below. The [catalog release](https://github.com/reynalivan/3dm-catalog-asset/releases/latest) is data for EMMM, not an application installer.
 
 ## Architecture
 
