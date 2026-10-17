@@ -24,7 +24,7 @@ Create repository secrets at **Settings → Secrets and variables → Actions �
 - `TAURI_SIGNING_PRIVATE_KEY`: complete content of the private `.key` file.
 - `TAURI_SIGNING_PRIVATE_KEY_PASSWORD`: the private-key password, only when one was set while generating the key.
 
-The GitHub release updater endpoint is `https://github.com/reynalivan/EMMM/releases/latest/download/latest.json`. A draft release is not the latest published release: inspect its assets, then publish it before expecting installed apps to find it.
+The GitHub release updater endpoint is `https://github.com/reynalivan/EMMM2/releases/latest/download/latest.json`. A draft release is not the latest published release: inspect its assets, then publish it before expecting installed apps to find it.
 
 ## Prepare a release locally
 

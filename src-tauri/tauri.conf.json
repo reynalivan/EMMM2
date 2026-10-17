@@ -5,7 +5,7 @@
   "identifier": "com.reynalivan.emmm",
   "plugins": {
     "updater": {
-      "endpoints": ["https://github.com/reynalivan/EMMM/releases/latest/download/latest.json"],
+      "endpoints": ["https://github.com/reynalivan/EMMM2/releases/latest/download/latest.json"],
       "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDk3ODI2Mjg1MUMzREJCNTUKUldSVnV6MGNoV0tDbDZqOSt1WGRCMFNXdFV1bmhyRTVOZDVzV0FIVHBLc3BVT2wwZExmbHFYN1oK"
     }
   },
