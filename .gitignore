@@ -97,4 +97,11 @@ src-tauri/gen/schemasmsedgedriver.exe
 /tsconfig*.tsbuildinfo
 /.audit-output/
 /.bug-hunter/
+/.codegraph/
 /.playwright-mcp/
+/.firecrawl/
+/docs/plans/
+/docs/audits/
+/docs/task/
+/docs/tasks/
+/docs/history/
