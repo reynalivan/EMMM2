@@ -26,7 +26,7 @@ The images in `public/screenshots/` are optimized WebP captures of the native Ta
 | `settings-hotkeys.webp`, `hotkey-settings-focus.webp` | Collection shortcuts, optional game notices, and KeyViewer controls in Settings |
 | `settings-catalog.webp`, `settings-catalog-focus.webp` | Catalog Assets settings and the ZIP import controls |
 | `metadata-filters-focus.webp` | Search, status, category, and metadata controls in the Object sidebar |
-| `mod-inbox.webp` | New mods waiting in the Inbox |
+| `mod-inbox-sample.webp` | New mods waiting in the Inbox |
 | `smart-classification.webp` | High-confidence suggestions alongside matches needing review |
 | `nested-subfolders.webp` | Variants inside an existing nested folder |
 | `collections-safe-mode.webp` | Saved Collections and their safety labels |
@@ -39,7 +39,7 @@ The images in `public/screenshots/` are optimized WebP captures of the native Ta
 | `search-filters.webp` | Object search and filters |
 | `favorites-filters.webp` | Favorite mod and pinned Object List entry |
 | `mod-health-details.webp` | Detected hotkey in Mod Health details |
-| `storage-optimizer.webp` | Duplicate scan results and resolution actions |
+| `storage-optimizer-sample.webp` | Duplicate scan results and resolution actions |
 | `setup-games.webp` | Game path and executable settings |
 | `setup-xxmi-welcome.webp`, `setup-xxmi-actions.webp` | Native onboarding entry with XXMI Auto-Detect and manual setup |
 | `quick-play-focus.webp`, `game-settings-focus.webp` | Tight crops of Quick Play and the Game Settings dialog |
