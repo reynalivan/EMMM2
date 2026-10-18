@@ -996,7 +996,7 @@ impl WatcherSuppressor {
     fn decrement(&self) {
         let _ = self
             .guard_depth
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
+            .try_update(Ordering::AcqRel, Ordering::Acquire, |current| {
                 Some(current.saturating_sub(1))
             });
     }
