@@ -1,13 +1,13 @@
 # Tauri Updater Release Runbook
 
-This project ships application updates through the Tauri v2 updater and GitHub Releases. The updater signature and Windows code-signing signature are distinct controls: both are required for a trustworthy Windows release.
+This project ships application updates through the Tauri v2 updater and GitHub Releases. The updater signature is mandatory for every update. Windows Authenticode is a separate publisher-trust control; without a trusted code-signing certificate, installers must be disclosed as unsigned and may trigger Windows/SmartScreen warnings. A self-signed certificate does not establish public publisher trust.
 
 ## Immutable key rules
 
 - `TAURI_SIGNING_PRIVATE_KEY` is the Tauri updater private key. It must exist only in an encrypted backup and the GitHub Actions secret of this repository.
 - The matching public key belongs in `src-tauri/tauri.conf.json` under `plugins.updater.pubkey`.
 - Never commit either private-key file, print the private key in a log, or rotate the key after publishing an updater-enabled release. Existing installations can only accept future artifacts signed by the same private key.
-- Authenticode signing is separate from Tauri updater signing. Configure Windows code signing during the bundle step; never alter an updater artifact after its Tauri `.sig` has been generated.
+- Authenticode signing is separate from Tauri updater signing. When a trusted certificate is available, configure Windows code signing during the bundle step; never alter an updater artifact after its Tauri `.sig` has been generated. Without a certificate, preserve updater signing and disclose the unsigned Windows publisher in the release notes; do not fabricate publisher trust.
 
 ## Required tracked configuration
 
@@ -15,7 +15,7 @@ This project ships application updates through the Tauri v2 updater and GitHub R
 - `src-tauri/tauri.conf.json` sets `bundle.createUpdaterArtifacts` to `true`.
 - `plugins.updater.pubkey` contains the updater public key, not a file path.
 - `plugins.updater.endpoints` contains production HTTPS URLs only.
-- `.github/workflows/release.yml` passes `TAURI_SIGNING_PRIVATE_KEY` and optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to `tauri-apps/tauri-action` and retains `includeUpdaterJson: true`.
+- `.github/workflows/release.yml` passes `TAURI_SIGNING_PRIVATE_KEY` and optional `TAURI_SIGNING_PRIVATE_KEY_PASSWORD` to `tauri-apps/tauri-action@v1` and retains `uploadUpdaterJson: true`.
 
 ## GitHub setup
 
@@ -50,10 +50,12 @@ git push origin v0.1.0
 
 1. Push the release tag only after its commit is reviewed.
 2. Confirm the GitHub Actions workflow succeeds without exposing secrets in logs.
-3. Open the draft GitHub Release and verify `latest.json`, the Windows updater artifact, and its generated signature are attached.
+3. Open the draft GitHub Release and verify `latest.json`, both requested Windows installers and their generated signatures are attached. Verify updater signatures against the configured public key, compare SHA-256 checksums and confirm manifest URLs point to this release.
 4. Publish the release so the `releases/latest` endpoint resolves it.
 5. On a clean Windows VM, install the prior EMMM version, then update to the new release through the app.
-6. Verify the installed version, the Authenticode publisher, and a failed update when a copied artifact is intentionally modified in a non-production test.
+6. Verify the installed version, the Authenticode publisher when configured, and a failed update when a copied artifact is intentionally modified in a non-production test. Record unavailable VM/upgrade checks instead of claiming they passed.
+
+References: [Tauri updater signing](https://v2.tauri.app/plugin/updater/#signing-updates) and [Windows code signing](https://v2.tauri.app/distribute/sign/windows/).
 
 ## First release
 
