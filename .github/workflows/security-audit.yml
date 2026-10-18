@@ -38,6 +38,7 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
         with:
           node-version: '24'
+          package-manager-cache: false
 
       - name: Install cargo-audit
         run: cargo install cargo-audit --version 0.22.2 --locked
