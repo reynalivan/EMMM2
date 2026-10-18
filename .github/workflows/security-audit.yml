@@ -5,12 +5,20 @@ on:
     paths:
       - 'src-tauri/Cargo.toml'
       - 'src-tauri/Cargo.lock'
+      - 'src-tauri/src/**'
+      - 'src-tauri/build.rs'
+      - 'security/**'
+      - 'scripts/audit-rust-dependencies*'
       - '.github/workflows/security-audit.yml'
   push:
     branches: [main]
     paths:
       - 'src-tauri/Cargo.toml'
       - 'src-tauri/Cargo.lock'
+      - 'src-tauri/src/**'
+      - 'src-tauri/build.rs'
+      - 'security/**'
+      - 'scripts/audit-rust-dependencies*'
       - '.github/workflows/security-audit.yml'
   schedule:
     - cron: '23 3 * * 1'
@@ -21,15 +29,29 @@ permissions:
 
 jobs:
   audit:
-    runs-on: ubuntu-latest
+    runs-on: windows-latest
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
 
       - uses: dtolnay/rust-toolchain@stable
 
+      - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5
+        with:
+          node-version: '24'
+
       - name: Install cargo-audit
         run: cargo install cargo-audit --version 0.22.2 --locked
 
-      - name: Audit Rust dependencies
-        working-directory: src-tauri
-        run: cargo audit --deny warnings
+      - name: Test fail-closed exception policy
+        run: node --test scripts/audit-rust-dependencies.test.mjs
+
+      - name: Audit complete lockfile and validate Windows exceptions
+        run: node scripts/audit-rust-dependencies.mjs "${{ runner.temp }}/rustsec-audit"
+
+      - name: Retain full unfiltered audit and decisions
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: rustsec-windows-audit
+          path: ${{ runner.temp }}/rustsec-audit/
+          if-no-files-found: warn

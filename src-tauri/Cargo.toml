@@ -64,7 +64,7 @@ secrecy = "0.10.3"
 notify = "8.2"
 compress-tools = { version = "0.16", features = ["static"] }
 tempfile = "3"
-lru = "0.16.3"
+lru = "0.18.2"
 flate2 = { version = "1", default-features = false, features = ["rust_backend"] }
 zip = { version = "2", default-features = false, features = ["deflate-flate2", "flate2", "deflate64", "bzip2", "lzma", "xz", "zstd", "aes-crypto"] }
 rand = "0.8"
@@ -73,7 +73,8 @@ reqwest = { version = "0.13.2", features = ["blocking", "json", "stream"] }
 fs_extra = "1.3.0"
 dotenvy = "0.15.7"
 urlencoding = "2.1.3"
-tauri-plugin-updater = "2"
+# Published updates use signed MSI/NSIS files, not legacy ZIP installer archives.
+tauri-plugin-updater = { version = "2", default-features = false, features = ["rustls-tls"] }
 encoding_rs = "0.8.35"
 tauri-plugin-global-shortcut = "2"
 futures-util = "0.3.32"

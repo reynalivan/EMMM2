@@ -48,6 +48,14 @@ git push origin v0.1.0
 
 ## Release verification
 
+The dependency gate is mandatory before bundling: run
+`node scripts/audit-rust-dependencies.mjs <dedicated-output-directory>` with
+`cargo-audit 0.22.2`. The release workflow runs this same gate and retains its full,
+unfiltered report. See `security/README.md` for exact, owned, expiring exceptions;
+do not bypass an expired or newly failing review. Windows updates use raw signed
+MSI/NSIS assets; the updater's optional legacy ZIP feature is disabled. Do not
+publish ZIP-wrapped Windows updater assets without a new security/compatibility review.
+
 1. Push the release tag only after its commit is reviewed.
 2. Confirm the GitHub Actions workflow succeeds without exposing secrets in logs.
 3. Open the draft GitHub Release and verify `latest.json`, both requested Windows installers and their generated signatures are attached. Verify updater signatures against the configured public key, compare SHA-256 checksums and confirm manifest URLs point to this release.

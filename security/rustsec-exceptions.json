@@ -1,0 +1,344 @@
+{
+  "schemaVersion": 1,
+  "target": "x86_64-pc-windows-msvc",
+  "exceptions": [
+    {
+      "advisory": "RUSTSEC-2023-0071",
+      "package": "rsa",
+      "version": "0.9.10",
+      "kind": "vulnerability",
+      "disposition": "not-in-windows-graph",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "SQLx SQLite-only production tree excludes the optional MySQL/RSA dependency. Lockfile presence is not executable reachability.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2023-0071.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Keep SQLx default features disabled; re-evaluate before enabling MySQL, PostgreSQL or another release target.",
+      "graph": null
+    },
+    {
+      "advisory": "RUSTSEC-2026-0367",
+      "package": "zip",
+      "version": "2.4.2",
+      "kind": "vulnerability",
+      "disposition": "vulnerable-code-not-used",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "Application ZIP readers manually validate and copy entries; they never call ZipArchive/ZipStreamReader extraction. Links, privileged file types, unsafe paths and collisions are rejected. Updater legacy ZIP support is disabled. ZIP 9 failed the CP437 asset-name regression, so upgrading now would corrupt legitimate mod references.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2026-0367.html; security/README.md; CI windows-tree.txt; src-tauri/src/modules/library/application/mods/archive/zip_reader.rs; archive regression tests",
+      "followUp": "Adopt an upstream version that fixes the extraction advisories AND preserves flag-aware CP437 names; keep the archive regression suite and re-review the whole Rust source tree after any source change.",
+      "graph": {
+        "features": [
+          "_deflate-any",
+          "aes",
+          "aes-crypto",
+          "bzip2",
+          "constant_time_eq",
+          "deflate-flate2",
+          "deflate64",
+          "flate2",
+          "getrandom",
+          "hmac",
+          "lzma",
+          "lzma-rs",
+          "pbkdf2",
+          "sha1",
+          "xz",
+          "zeroize",
+          "zstd"
+        ],
+        "parents": ["emmm"]
+      },
+      "sourceTreeSha256": "60973e7e17f0069d77dc09449a7d2e36f7c6fd0aa84e16967c8a35fa866dbb48"
+    },
+    {
+      "advisory": "RUSTSEC-2026-0368",
+      "package": "zip",
+      "version": "2.4.2",
+      "kind": "vulnerability",
+      "disposition": "vulnerable-code-not-used",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "Application ZIP readers manually validate and copy entries; they never call ZipArchive/ZipStreamReader extraction. Links, privileged file types, unsafe paths and collisions are rejected. Updater legacy ZIP support is disabled. ZIP 9 failed the CP437 asset-name regression, so upgrading now would corrupt legitimate mod references.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2026-0368.html; security/README.md; CI windows-tree.txt; src-tauri/src/modules/library/application/mods/archive/zip_reader.rs; archive regression tests",
+      "followUp": "Adopt an upstream version that fixes the extraction advisories AND preserves flag-aware CP437 names; keep the archive regression suite and re-review the whole Rust source tree after any source change.",
+      "graph": {
+        "features": [
+          "_deflate-any",
+          "aes",
+          "aes-crypto",
+          "bzip2",
+          "constant_time_eq",
+          "deflate-flate2",
+          "deflate64",
+          "flate2",
+          "getrandom",
+          "hmac",
+          "lzma",
+          "lzma-rs",
+          "pbkdf2",
+          "sha1",
+          "xz",
+          "zeroize",
+          "zstd"
+        ],
+        "parents": ["emmm"]
+      },
+      "sourceTreeSha256": "60973e7e17f0069d77dc09449a7d2e36f7c6fd0aa84e16967c8a35fa866dbb48"
+    },
+    {
+      "advisory": "RUSTSEC-2026-0369",
+      "package": "zip",
+      "version": "2.4.2",
+      "kind": "vulnerability",
+      "disposition": "vulnerable-code-not-used",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "Application ZIP readers manually validate and copy entries; they never call ZipArchive/ZipStreamReader extraction. Links, privileged file types, unsafe paths and collisions are rejected. Updater legacy ZIP support is disabled. ZIP 9 failed the CP437 asset-name regression, so upgrading now would corrupt legitimate mod references.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2026-0369.html; security/README.md; CI windows-tree.txt; src-tauri/src/modules/library/application/mods/archive/zip_reader.rs; archive regression tests",
+      "followUp": "Adopt an upstream version that fixes the extraction advisories AND preserves flag-aware CP437 names; keep the archive regression suite and re-review the whole Rust source tree after any source change.",
+      "graph": {
+        "features": [
+          "_deflate-any",
+          "aes",
+          "aes-crypto",
+          "bzip2",
+          "constant_time_eq",
+          "deflate-flate2",
+          "deflate64",
+          "flate2",
+          "getrandom",
+          "hmac",
+          "lzma",
+          "lzma-rs",
+          "pbkdf2",
+          "sha1",
+          "xz",
+          "zeroize",
+          "zstd"
+        ],
+        "parents": ["emmm"]
+      },
+      "sourceTreeSha256": "60973e7e17f0069d77dc09449a7d2e36f7c6fd0aa84e16967c8a35fa866dbb48"
+    },
+    {
+      "advisory": "RUSTSEC-2025-0057",
+      "package": "fxhash",
+      "version": "0.2.1",
+      "kind": "unmaintained",
+      "disposition": "maintenance-risk-accepted",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "Unmaintained hashing remains transitive through the Tauri HTML selectors dependency. This accepts maintenance risk, not a claim of no vulnerability.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2025-0057.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Track selectors/kuchikiki replacement of fxhash; new vulnerability advisories remain blocking.",
+      "graph": {
+        "features": [],
+        "parents": ["selectors@0.24.0"]
+      }
+    },
+    {
+      "advisory": "RUSTSEC-2024-0436",
+      "package": "paste",
+      "version": "1.0.15",
+      "kind": "unmaintained",
+      "disposition": "maintenance-risk-accepted",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "Unmaintained paste remains a Specta macro dependency. This accepts maintenance risk, not a claim of no vulnerability.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2024-0436.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Track the compatible Specta migration away from paste; avoid an unrelated RC API migration in this patch.",
+      "graph": {
+        "features": [],
+        "parents": ["specta@2.0.0-rc.22"]
+      }
+    },
+    {
+      "advisory": "RUSTSEC-2024-0370",
+      "package": "proc-macro-error",
+      "version": "1.0.4",
+      "kind": "unmaintained",
+      "disposition": "not-in-windows-graph",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "The locked macro dependency is not selected in the Windows production normal/build tree.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2024-0370.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Remove the obsolete transitive dependency through its owning upstream when compatible.",
+      "graph": null
+    },
+    {
+      "advisory": "RUSTSEC-2025-0081",
+      "package": "unic-char-property",
+      "version": "0.9.0",
+      "kind": "unmaintained",
+      "disposition": "maintenance-risk-accepted",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "Unmaintained Unicode tables remain transitive through Tauri URLPattern. This accepts maintenance risk, not a claim of no vulnerability.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2025-0081.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Track the Tauri/urlpattern migration to maintained Unicode data; new vulnerability advisories remain blocking.",
+      "graph": {
+        "features": [],
+        "parents": ["unic-ucd-ident@0.9.0"]
+      }
+    },
+    {
+      "advisory": "RUSTSEC-2025-0075",
+      "package": "unic-char-range",
+      "version": "0.9.0",
+      "kind": "unmaintained",
+      "disposition": "maintenance-risk-accepted",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "Unmaintained Unicode tables remain transitive through Tauri URLPattern. This accepts maintenance risk, not a claim of no vulnerability.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2025-0075.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Track the Tauri/urlpattern migration to maintained Unicode data; new vulnerability advisories remain blocking.",
+      "graph": {
+        "features": ["default"],
+        "parents": ["unic-char-property@0.9.0", "unic-ucd-ident@0.9.0"]
+      }
+    },
+    {
+      "advisory": "RUSTSEC-2025-0080",
+      "package": "unic-common",
+      "version": "0.9.0",
+      "kind": "unmaintained",
+      "disposition": "maintenance-risk-accepted",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "Unmaintained Unicode tables remain transitive through Tauri URLPattern. This accepts maintenance risk, not a claim of no vulnerability.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2025-0080.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Track the Tauri/urlpattern migration to maintained Unicode data; new vulnerability advisories remain blocking.",
+      "graph": {
+        "features": ["default"],
+        "parents": ["unic-ucd-version@0.9.0"]
+      }
+    },
+    {
+      "advisory": "RUSTSEC-2025-0100",
+      "package": "unic-ucd-ident",
+      "version": "0.9.0",
+      "kind": "unmaintained",
+      "disposition": "maintenance-risk-accepted",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "Unmaintained Unicode tables remain transitive through Tauri URLPattern. This accepts maintenance risk, not a claim of no vulnerability.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2025-0100.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Track the Tauri/urlpattern migration to maintained Unicode data; new vulnerability advisories remain blocking.",
+      "graph": {
+        "features": ["default", "id", "xid"],
+        "parents": ["urlpattern@0.3.0"]
+      }
+    },
+    {
+      "advisory": "RUSTSEC-2025-0098",
+      "package": "unic-ucd-version",
+      "version": "0.9.0",
+      "kind": "unmaintained",
+      "disposition": "maintenance-risk-accepted",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "Unmaintained Unicode tables remain transitive through Tauri URLPattern. This accepts maintenance risk, not a claim of no vulnerability.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2025-0098.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Track the Tauri/urlpattern migration to maintained Unicode data; new vulnerability advisories remain blocking.",
+      "graph": {
+        "features": [],
+        "parents": ["unic-ucd-ident@0.9.0"]
+      }
+    },
+    {
+      "advisory": "RUSTSEC-2026-0371",
+      "package": "zbus_names",
+      "version": "4.3.1",
+      "kind": "unmaintained",
+      "disposition": "not-in-windows-graph",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "The Linux D-Bus stack is absent from the Windows production normal/build tree.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2026-0371.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Track the Tauri D-Bus dependency migration to zbus 6 before extending release targets.",
+      "graph": null
+    },
+    {
+      "advisory": "RUSTSEC-2026-0370",
+      "package": "zvariant",
+      "version": "5.10.0",
+      "kind": "unmaintained",
+      "disposition": "not-in-windows-graph",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "The Linux D-Bus stack is absent from the Windows production normal/build tree.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2026-0370.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Track the Tauri D-Bus dependency migration to zbus 6 before extending release targets.",
+      "graph": null
+    },
+    {
+      "advisory": "RUSTSEC-2026-0372",
+      "package": "zvariant_derive",
+      "version": "5.10.0",
+      "kind": "unmaintained",
+      "disposition": "not-in-windows-graph",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "The Linux D-Bus stack is absent from the Windows production normal/build tree.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2026-0372.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Track the Tauri D-Bus dependency migration to zbus 6 before extending release targets.",
+      "graph": null
+    },
+    {
+      "advisory": "RUSTSEC-2024-0429",
+      "package": "glib",
+      "version": "0.18.5",
+      "kind": "unsound",
+      "disposition": "not-in-windows-graph",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "GTK/GLib belongs to the non-Windows Tauri backend and is absent from the Windows normal/build tree.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2024-0429.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Upgrade the Tauri GTK stack before any Linux release; this exception does not authorize Linux distribution.",
+      "graph": null
+    },
+    {
+      "advisory": "RUSTSEC-2026-0097",
+      "package": "rand",
+      "version": "0.7.3",
+      "kind": "unsound",
+      "disposition": "feature-not-enabled",
+      "owner": "reynalivan",
+      "reviewedAt": "2026-10-18T00:00:00Z",
+      "expiresAt": "2026-11-17T00:00:00Z",
+      "reason": "The 0.7 build-time PHF generator does not enable log, a necessary condition for logger/RNG reentrancy in this advisory.",
+      "evidence": "https://rustsec.org/advisories/RUSTSEC-2026-0097.html; security/README.md; CI windows-tree.txt",
+      "followUp": "Track selectors/kuchikiki PHF migration; remove this exception when rand 0.7 leaves the build graph.",
+      "graph": {
+        "features": [
+          "alloc",
+          "default",
+          "getrandom",
+          "getrandom_package",
+          "libc",
+          "rand_pcg",
+          "small_rng",
+          "std"
+        ],
+        "parents": ["phf_generator@0.8.0"]
+      },
+      "forbiddenFeature": "log"
+    }
+  ]
+}

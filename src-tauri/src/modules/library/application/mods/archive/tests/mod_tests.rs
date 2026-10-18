@@ -22,6 +22,40 @@ fn create_test_zip(dir: &Path, name: &str, files: &[(&str, &[u8])]) -> PathBuf {
 }
 
 #[test]
+fn staging_preserves_cp437_asset_names_that_also_form_valid_utf8() {
+    let dir = TempDir::new().unwrap();
+    let ini = "[TextureOverrideLegacy]\nhash = 12345678\n[ResourceLegacy]\nfilename = ├⌐.dds\n";
+    let zip_path = create_test_zip(
+        dir.path(),
+        "legacy-name.zip",
+        &[("AB.dds", b"texture"), ("config.ini", ini.as_bytes())],
+    );
+    let mut bytes = fs::read(&zip_path).unwrap();
+    let placeholder = b"AB.dds";
+    let offsets: Vec<_> = bytes
+        .windows(placeholder.len())
+        .enumerate()
+        .filter_map(|(index, value)| (value == placeholder).then_some(index))
+        .collect();
+    // Rewrite local/central names without changing the ASCII writer's encoding flag.
+    assert_eq!(offsets.len(), 2);
+    for offset in offsets {
+        bytes[offset..offset + 2].copy_from_slice(&[0xc3, 0xa9]);
+    }
+    fs::write(&zip_path, bytes).unwrap();
+    let staging_dir = dir.path().join("staging");
+
+    extract_archive_to_staging(&zip_path, &staging_dir).unwrap();
+
+    assert!(staging_dir.join("├⌐.dds").is_file());
+    assert!(!staging_dir.join("é.dds").exists());
+    assert_eq!(
+        fs::read_to_string(staging_dir.join("config.ini")).unwrap(),
+        ini
+    );
+}
+
+#[test]
 fn staging_pre_cancelled_aborts_and_cleans_up() {
     let dir = TempDir::new().unwrap();
     let zip_path = create_test_zip(

@@ -47,6 +47,9 @@ jobs:
       - name: Frontend tests
         run: pnpm vitest run
 
+      - name: Dependency policy tests
+        run: node --test scripts/audit-rust-dependencies.test.mjs
+
       - name: Rust format
         working-directory: src-tauri
         run: cargo fmt --check

@@ -55,6 +55,23 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Install cargo-audit
+        run: cargo install cargo-audit --version 0.22.2 --locked
+
+      - name: Test dependency exception policy
+        run: node --test scripts/audit-rust-dependencies.test.mjs
+
+      - name: Gate release on complete dependency audit
+        run: node scripts/audit-rust-dependencies.mjs "${{ runner.temp }}/rustsec-audit"
+
+      - name: Retain complete release audit
+        if: always()
+        uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5
+        with:
+          name: release-rustsec-audit
+          path: ${{ runner.temp }}/rustsec-audit/
+          if-no-files-found: warn
+
       - name: Validate Grafana observability configuration
         if: ${{ env.EMMM_GRAFANA_OTLP_METRICS_ENDPOINT != '' || env.EMMM_GRAFANA_OTLP_AUTHORIZATION != '' || env.VITE_GRAFANA_FARO_URL != '' || env.VITE_GRAFANA_FARO_API_KEY != '' }}
         env:
