@@ -1,4 +1,10 @@
 {
+  "importing": "正在导入模组…",
+  "result": {
+    "success": "导入完成",
+    "partial": "导入需要处理",
+    "review_remaining": "查看剩余项目"
+  },
   "resume_import": "继续导入（{{count}} 项）",
   "title": "匹配向导",
   "review_title": "检查匹配",

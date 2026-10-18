@@ -1,4 +1,10 @@
 {
+  "importing": "Mengimpor mod…",
+  "result": {
+    "success": "Import selesai",
+    "partial": "Import perlu ditinjau",
+    "review_remaining": "Tinjau yang tersisa"
+  },
   "title": "Wizard Pencocokan",
   "review_title": "Tinjau kecocokan",
   "review_summary": "{{count}} mod · {{ready}} diproses · {{skipped}} dilewati · {{errors}} error",

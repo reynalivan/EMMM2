@@ -1,6 +1,10 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ExtractionEvent, ImportBatch } from '../../shared/api/tauri/bindings.gen';
+import type {
+  ExtractionEvent,
+  ImportBatch,
+  ImportBatchReport,
+} from '../../shared/api/tauri/bindings.gen';
 import { ImportBatchWizardHost } from './ImportBatchWizardHost';
 
 const mocks = vi.hoisted(() => {
@@ -13,6 +17,7 @@ const mocks = vi.hoisted(() => {
     analyzeImportBatch: vi.fn(),
     analyzeImportBatchWithOptions: vi.fn(),
     createImportBatch: vi.fn(),
+    commitImportBatch: vi.fn(),
     getGames: vi.fn(),
     getImportBatch: vi.fn(),
     getObjectsCmd: vi.fn(),
@@ -46,6 +51,7 @@ vi.mock('../../shared/api/tauri/bindings', () => ({
     analyzeImportBatch: mocks.analyzeImportBatch,
     analyzeImportBatchWithOptions: mocks.analyzeImportBatchWithOptions,
     createImportBatch: mocks.createImportBatch,
+    commitImportBatch: mocks.commitImportBatch,
     getGames: mocks.getGames,
     getImportBatch: mocks.getImportBatch,
     getObjectsCmd: mocks.getObjectsCmd,
@@ -63,8 +69,25 @@ vi.mock('@/shared/ui/toast', () => ({
   toast: { error: mocks.toastError },
 }));
 vi.mock('../match-wizard/ImportBatchWizard', () => ({
-  ImportBatchWizard: ({ batch }: { batch: ImportBatch }) => (
-    <div data-testid="import-batch-wizard">{batch.status}</div>
+  ImportBatchWizard: ({
+    batch,
+    report,
+    onCommit,
+    onReviewRemaining,
+  }: {
+    batch: ImportBatch;
+    report: ImportBatchReport | null;
+    onCommit: () => Promise<void>;
+    onReviewRemaining: () => void;
+  }) => (
+    <div data-testid="import-batch-wizard">
+      {batch.status}
+      {report ? (
+        <button onClick={onReviewRemaining}>review remaining</button>
+      ) : (
+        <button onClick={() => void onCommit()}>commit</button>
+      )}
+    </div>
   ),
 }));
 
@@ -136,6 +159,53 @@ describe('ImportBatchWizardHost archive analysis', () => {
     mocks.getObjectsCmd.mockResolvedValue({ objects: [] });
     mocks.getGames.mockResolvedValue([]);
     mocks.listImportBatches.mockResolvedValue([batch('draft')]);
+  });
+
+  it('returns from a partial report to review and retries the recovery item', async () => {
+    const ready = batch('awaiting_review');
+    ready.items[0] = { ...ready.items[0], status: 'ready', decision: 'confirm' };
+    const pending: ImportBatch = {
+      ...ready,
+      status: 'partial',
+      items: [{ ...ready.items[0], status: 'metadata_pending' }],
+    };
+    const done: ImportBatch = {
+      ...ready,
+      status: 'done',
+      items: [{ ...ready.items[0], status: 'done' }],
+    };
+    const partial: ImportBatchReport = {
+      batchId: ready.id,
+      moved: 1,
+      reallocated: 0,
+      createdCanonicalFolders: 0,
+      skipped: 0,
+      collisions: 0,
+      metadataPending: 1,
+      failed: 0,
+    };
+    mocks.listImportBatches.mockResolvedValue([ready]);
+    mocks.getImportBatch.mockResolvedValue(ready);
+    mocks.commitImportBatch
+      .mockResolvedValueOnce(partial)
+      .mockResolvedValueOnce({ ...partial, metadataPending: 0 });
+    render(<ImportBatchWizardHost />);
+    await resumeImport();
+    mocks.getImportBatch.mockResolvedValue(pending);
+    fireEvent.click(screen.getByRole('button', { name: 'commit' }));
+    await screen.findByRole('button', { name: 'review remaining' });
+    expect(screen.getByTestId('import-batch-wizard')).toHaveTextContent('partial');
+    fireEvent.click(screen.getByRole('button', { name: 'review remaining' }));
+    expect(screen.queryByRole('button', { name: 'review remaining' })).not.toBeInTheDocument();
+    mocks.getImportBatch.mockResolvedValue(done);
+    fireEvent.click(screen.getByRole('button', { name: 'commit' }));
+    await waitFor(() =>
+      expect(screen.getByTestId('import-batch-wizard')).toHaveTextContent('done'),
+    );
+    expect(mocks.commitImportBatch).toHaveBeenNthCalledWith(2, {
+      batchId: 'batch-1',
+      itemIds: ['item-1'],
+    });
   });
 
   it('uses the options command with nested extraction enabled and surfaces channel progress', async () => {

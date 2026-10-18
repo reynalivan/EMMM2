@@ -1,7 +1,11 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { describe, expect, it, vi } from 'vitest';
-import type { ImportBatch, ImportItem } from '../../shared/api/tauri/bindings.gen';
+import type {
+  ImportBatch,
+  ImportBatchReport,
+  ImportItem,
+} from '../../shared/api/tauri/bindings.gen';
 import { ImportBatchWizard } from './ImportBatchWizard';
 
 vi.mock('@tauri-apps/api/core', () => ({ convertFileSrc: (path: string) => path }));
@@ -106,6 +110,120 @@ function handlers() {
 }
 
 describe('ImportBatchWizard', () => {
+  it('locks review and prevents duplicate import while commit is pending', async () => {
+    let finish: () => void = () => undefined;
+    const callbacks = handlers();
+    callbacks.onCommit.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finish = resolve;
+        }),
+    );
+    render(
+      <ImportBatchWizard
+        batch={batch(item({ status: 'ready', decision: 'confirm' }))}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...callbacks}
+      />,
+    );
+    const commit = screen.getByRole('button', { name: 'actions.import:1' });
+    fireEvent.click(commit);
+    fireEvent.click(commit);
+    expect(callbacks.onCommit).toHaveBeenCalledOnce();
+    expect(screen.queryByRole('table')).not.toBeInTheDocument();
+    expect(screen.getByText('importing')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'common:actions.close' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'common:actions.cancel' })).toBeDisabled();
+    finish();
+    await waitFor(() => expect(screen.queryByText('importing')).not.toBeInTheDocument());
+  });
+  it('preselects ready high matches but preserves an explicit Skip', () => {
+    const high = {
+      kind: 'existing_object' as const,
+      objectId: 'robin',
+      canonicalEntryKey: null,
+      folderName: 'Robin',
+      targetPath: 'C:/Mods/Robin',
+      confidencePercentage: 82,
+      confidenceTier: 'high' as const,
+      warning: null,
+    };
+    render(
+      <ImportBatchWizard
+        batch={batch(
+          item({ status: 'ready', decision: 'reallocate', destinationSuggestions: [high] }),
+          [
+            item({
+              id: 'skipped',
+              plannedName: 'skipped',
+              status: 'skipped',
+              decision: 'skip',
+              destinationSuggestions: [high],
+            }),
+          ],
+        )}
+        schema={null}
+        objects={[]}
+        busyItemId={null}
+        report={null}
+        {...handlers()}
+      />,
+    );
+    const rows = screen.getAllByRole('checkbox', { name: 'selection.item' });
+    expect(rows[0]).toBeChecked();
+    expect(rows[1]).not.toBeChecked();
+  });
+
+  it.each([false, true])(
+    'replaces review controls with the result overlay (partial: %s)',
+    (partial) => {
+      const callbacks = handlers();
+      const onReviewRemaining = vi.fn();
+      const report: ImportBatchReport = {
+        batchId: 'batch-1',
+        moved: 2,
+        reallocated: 1,
+        createdCanonicalFolders: 0,
+        skipped: 0,
+        collisions: 0,
+        metadataPending: partial ? 1 : 0,
+        failed: 0,
+      };
+      render(
+        <ImportBatchWizard
+          batch={batch(
+            item({ status: partial ? 'metadata_pending' : 'done', decision: 'confirm' }),
+          )}
+          schema={null}
+          objects={[]}
+          busyItemId={null}
+          report={report}
+          onReviewRemaining={onReviewRemaining}
+          {...callbacks}
+        />,
+      );
+      expect(screen.queryByRole('table')).not.toBeInTheDocument();
+      expect(screen.queryByPlaceholderText('search_placeholder')).not.toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: /filters.high/ })).not.toBeInTheDocument();
+      expect(screen.getByText('result_summary')).toBeInTheDocument();
+      if (partial) {
+        fireEvent.click(screen.getByRole('button', { name: 'result.review_remaining' }));
+        expect(onReviewRemaining).toHaveBeenCalledOnce();
+        expect(screen.queryByText('result.success')).not.toBeInTheDocument();
+      } else {
+        expect(screen.getByText('result.success')).toBeInTheDocument();
+        expect(
+          screen.queryByRole('button', { name: 'result.review_remaining' }),
+        ).not.toBeInTheDocument();
+      }
+      fireEvent.click(screen.getByRole('button', { name: 'common:actions.close' }));
+      expect(callbacks.onClose).toHaveBeenCalledOnce();
+    },
+  );
+
   it('lets the user explicitly classify an item awaiting a category', async () => {
     const batchItem = item({
       status: 'awaiting_category',

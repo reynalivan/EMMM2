@@ -374,6 +374,127 @@ fn analysis_result_for_test() -> AnalysisResult {
 }
 
 #[tokio::test]
+async fn review_defaults_follow_destination_confidence_on_analysis_and_refresh() {
+    let context = init_test_db().await;
+    insert_test_game(
+        &context.pool,
+        &TestGameFixture {
+            id: "review-defaults",
+            name: "Genshin",
+            game_type: crate::modules::games::domain::models::GameType::Gimi,
+            path: "C:/Games/Genshin",
+            mods_path: Some("C:/Games/Genshin/Mods"),
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &context.pool,
+        &TestObjectFixture {
+            id: "object-ayaka",
+            game_id: "review-defaults",
+            name: "Ayaka",
+            folder_path: "Ayaka",
+            object_type: "Character",
+        },
+    )
+    .await
+    .unwrap();
+    for (id, tier, expected_decision, expected_status) in [
+        (
+            "low-default",
+            ConfidenceTier::Low,
+            ImportDecision::Skip,
+            ImportItemStatus::Skipped,
+        ),
+        (
+            "medium-default",
+            ConfidenceTier::Medium,
+            ImportDecision::Pending,
+            ImportItemStatus::AwaitingDestination,
+        ),
+        (
+            "high-default",
+            ConfidenceTier::High,
+            ImportDecision::Reallocate,
+            ImportItemStatus::Ready,
+        ),
+    ] {
+        create_batch(
+            &context.pool,
+            &CreateImportBatchRecord {
+                id: id.into(),
+                game_id: "review-defaults".into(),
+                flow: ImportFlow::AutoImport,
+                target_mode: TargetMode::Auto,
+                target_object_id: None,
+                target_subpath: None,
+                source_archive_path: None,
+            },
+            &[NewImportItemRecord {
+                id: id.into(),
+                source_kind: ImportSourceKind::Folder,
+                source_path: "C:/Downloads/Ayaka".into(),
+                staging_path: None,
+                planned_name: "Ayaka".into(),
+            }],
+        )
+        .await
+        .unwrap();
+        sqlx::query("UPDATE import_jobs SET status = 'staged' WHERE id = ?")
+            .bind(id)
+            .execute(&context.pool)
+            .await
+            .unwrap();
+        let mut analysis = analysis_result_for_test();
+        analysis.diagnostics.clear();
+        analysis.review_gate = ReviewGate {
+            reasons: vec![ReviewReason {
+                code: ReviewReasonCode::IdentityNoMatch,
+                diagnostic_code: None,
+            }],
+        };
+        analysis.destination_suggestions[0].confidence_tier = tier;
+        analysis.destination_suggestions[0].confidence_percentage = match tier {
+            ConfidenceTier::High => 82,
+            ConfidenceTier::Medium => 60,
+            _ => 28,
+        };
+        assert!(apply_analysis_result(&context.pool, id, &analysis)
+            .await
+            .unwrap());
+        let analyzed = get_batch(&context.pool, id).await.unwrap().unwrap();
+        assert_eq!(
+            analyzed.items[0].decision, expected_decision,
+            "analysis {id}"
+        );
+        assert_eq!(analyzed.items[0].status, expected_status, "analysis {id}");
+        assert!(store_match_suggestions(
+            &context.pool,
+            id,
+            &analysis.canonical_suggestions,
+            &analysis.destination_suggestions,
+            &analysis.evidence,
+            &analysis.review_gate
+        )
+        .await
+        .unwrap());
+        let refreshed = get_batch(&context.pool, id).await.unwrap().unwrap();
+        assert_eq!(
+            refreshed.items[0].decision, expected_decision,
+            "refresh {id}"
+        );
+        assert_eq!(refreshed.items[0].status, expected_status, "refresh {id}");
+        if tier == ConfidenceTier::High {
+            assert_eq!(
+                refreshed.items[0].analysis_ack_revision,
+                Some(refreshed.items[0].analysis_revision)
+            );
+        }
+    }
+}
+
+#[tokio::test]
 async fn auto_matched_identity_uses_the_default_destination_without_overwriting_identity_score() {
     let context = init_test_db().await;
     insert_test_game(
@@ -580,7 +701,7 @@ async fn high_confidence_destination_defaults_to_proceed_when_identity_needs_rev
 }
 
 #[tokio::test]
-async fn needs_review_identity_keeps_destination_unselected() {
+async fn high_destination_defaults_on_refresh_but_package_review_remains_unselected() {
     let context = init_test_db().await;
     insert_test_game(
         &context.pool,
@@ -590,6 +711,18 @@ async fn needs_review_identity_keeps_destination_unselected() {
             game_type: crate::modules::games::domain::models::GameType::Gimi,
             path: "C:/Games/Genshin",
             mods_path: Some("C:/Games/Genshin/Mods/character"),
+        },
+    )
+    .await
+    .unwrap();
+    insert_test_object(
+        &context.pool,
+        &TestObjectFixture {
+            id: "object-ayaka",
+            game_id: "gimi-review",
+            name: "Ayaka",
+            folder_path: "Ayaka",
+            object_type: "Character",
         },
     )
     .await
@@ -659,10 +792,14 @@ async fn needs_review_identity_keeps_destination_unselected() {
         .unwrap()
         .unwrap();
     let item = &batch.items[0];
-    assert_eq!(item.status, ImportItemStatus::AwaitingDestination);
-    assert_eq!(item.decision, ImportDecision::Pending);
-    assert_eq!(item.destination_object_id, None);
-    assert_eq!(item.destination_path, None);
+    assert_eq!(item.status, ImportItemStatus::Ready);
+    assert_eq!(item.decision, ImportDecision::Reallocate);
+    assert_eq!(item.destination_object_id.as_deref(), Some("object-ayaka"));
+    assert_eq!(
+        item.destination_path.as_deref(),
+        Some("C:/Games/Genshin/Mods/character/Ayaka")
+    );
+    assert_eq!(item.analysis_ack_revision, Some(item.analysis_revision));
     assert_eq!(item.confidence_percentage, 92);
     assert_eq!(item.destination_suggestions.len(), 1);
 

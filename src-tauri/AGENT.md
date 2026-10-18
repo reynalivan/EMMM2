@@ -42,6 +42,8 @@ EMMM2's backend is a **Modular Monolith** using **Strict Vertical Slices**.
 
 ## 4. Key Data Flows
 
+- **Import review defaults:** Analysis and suggestion refresh use the same high-destination safety gate and current analysis acknowledgment. High matches can default to Proceed only without package/content/target review blockers; Low destination matches default to Skip, while Medium/no-match remain manual. Explicit Skip clears both destination and legacy match-object identity. The frontend seeds ready High rows for bulk selection, locks review during commit and replaces review controls with an actual-count result dialog; partial results retain access to remaining-item recovery.
+
 - **Object folder ownership:** Catalog and Library share `platform::fs::owned_folder_create::PreparedFolderCreate`. New folders retain root, parent and source identity proofs, publish under coordinator admission, and use the existing `FOLDER_CREATE` journal contract. Catalog staging and thumbnail writes use the same physical namespace while retaining the configured root proof, so junction roots remain supported and retargeted aliases cannot redirect writes. Compensation and crash recovery remove only owned empty directories; changed identity, namespace or unfamiliar contents preserve repair evidence. Missing-source object deletion reconciles metadata under the retained game lock and mutation lease without adopting a late folder.
 
 - **Matcher aliases:** The reconciliation writer reports actual object pruning; only a successful projection commit advances the AppHandle-free object-alias revision. Parsed MasterDb cache loads fence both their existing generation and this revision, so removed aliases cannot remain indefinitely in a warm matcher.

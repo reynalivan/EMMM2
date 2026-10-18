@@ -731,6 +731,12 @@ pub(crate) async fn apply_analysis_result(
             Some(destination.target_path.as_str()),
             destination.canonical_entry_key.as_deref(),
         )
+    } else if analysis
+        .destination_suggestions
+        .first()
+        .is_some_and(|suggestion| suggestion.confidence_tier == ConfidenceTier::Low)
+    {
+        ("skip", "skipped", None, None, None)
     } else {
         ("pending", "awaiting_destination", None, None, None)
     };
@@ -840,13 +846,13 @@ pub async fn store_match_suggestions(
     } else {
         ImportMatchStatus::NeedsReview
     };
-    let default_destination = canonical
+    let default_destination = destinations
         .first()
         .filter(|suggestion| {
-            review_gate.is_empty() && suggestion.match_status == ImportMatchStatus::AutoMatched
+            review_gate.allows_high_confidence_destination_default()
+                && suggestion.confidence_tier == ConfidenceTier::High
         })
-        .and_then(|_| stored_destinations.first().copied())
-        .filter(|suggestion| suggestion.confidence_tier == ConfidenceTier::High);
+        .and_then(|_| stored_destinations.first().copied());
     let (confidence, tier) = canonical
         .first()
         .map(|suggestion| {
@@ -872,6 +878,12 @@ pub async fn store_match_suggestions(
                     destination.canonical_entry_key.as_deref(),
                 )
             }
+            None if destinations
+                .first()
+                .is_some_and(|suggestion| suggestion.confidence_tier == ConfidenceTier::Low) =>
+            {
+                ("skip", "skipped", None, None, None)
+            }
             None => ("pending", "awaiting_destination", None, None, None),
         };
     let result = sqlx::query(
@@ -879,7 +891,8 @@ pub async fn store_match_suggestions(
          SET canonical_suggestions_json = ?, destination_suggestions_json = ?, evidence_json = ?,
              review_gate_json = ?, match_confidence = ?, confidence_tier = ?, decision = ?,
              identity_match_status = ?, analysis_revision = analysis_revision + 1,
-             analysis_ack_revision = NULL, match_entry_key = ?, match_alias_name = NULL,
+             analysis_ack_revision = CASE WHEN ? THEN analysis_revision + 1 ELSE NULL END,
+             match_entry_key = ?, match_alias_name = NULL,
              match_object_id = ?, destination_object_id = ?, destination_path = ?, placed_path = NULL,
              result = NULL, error_msg = NULL, status = ?, updated_at = CURRENT_TIMESTAMP
          WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
@@ -892,6 +905,7 @@ pub async fn store_match_suggestions(
     .bind(tier.as_str())
     .bind(decision)
     .bind(identity_match_status.as_str())
+    .bind(default_destination.is_some())
     .bind(canonical_entry_key)
     .bind(destination_object_id)
     .bind(destination_object_id)
@@ -945,7 +959,7 @@ pub async fn store_decision(
         .map_err(|error| decode_error(format!("could not encode review gate: {error}")))?;
     let result = sqlx::query(
         "UPDATE import_jobs
-         SET decision = ?, destination_object_id = ?, destination_path = ?,
+         SET decision = ?, destination_object_id = ?, match_object_id = ?, destination_path = ?,
              match_entry_key = ?, match_alias_name = ?, match_confidence = ?, confidence_tier = ?,
              target_comparison_json = NULL, review_gate_json = ?,
              result = CASE WHEN result = 'target_conflict' THEN NULL ELSE result END,
@@ -954,6 +968,7 @@ pub async fn store_decision(
          WHERE id = ? AND status IN ('awaiting_destination', 'ready', 'skipped')",
     )
     .bind(input.decision.as_str())
+    .bind(&input.destination_object_id)
     .bind(&input.destination_object_id)
     .bind(&input.destination_path)
     .bind(&input.canonical_entry_key)

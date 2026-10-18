@@ -1,6 +1,12 @@
 {
   "title": "Match Wizard",
   "review_title": "Review matches",
+  "importing": "Importing mods…",
+  "result": {
+    "success": "Import complete",
+    "partial": "Import needs attention",
+    "review_remaining": "Review remaining"
+  },
   "review_summary": "{{count}} mods · {{ready}} proceed · {{skipped}} skipped · {{errors}} errors",
   "search_placeholder": "Search source mods…",
   "no_filtered_items": "No import items match this filter.",

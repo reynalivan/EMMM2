@@ -437,6 +437,7 @@ export function ImportBatchWizardHost() {
         objects={objects}
         busyItemId={busyItemId}
         report={report}
+        onReviewRemaining={() => setReport(null)}
         onClassify={(item, category, subCategory, metadata) =>
           updateItem(item.id, async () => {
             await commands.setImportItemClassification({
@@ -539,8 +540,8 @@ export function ImportBatchWizardHost() {
               batchId: batch.id,
               itemIds: commitItems.map((item) => item.id),
             });
-            setReport(result);
             await loadBatch(batch.id);
+            setReport(result);
           } catch (error) {
             toast.error(t('errors.commit', { error: formatAppError(error) }));
             await loadBatch(batch.id);

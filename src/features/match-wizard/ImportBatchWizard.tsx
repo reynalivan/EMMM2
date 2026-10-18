@@ -16,6 +16,7 @@ import type {
 import type { ObjectSummary } from '@/entities/game-object';
 import { destinationDecision } from './utils/importBatchDecision';
 import { ImportBatchWizardItemRow } from './components/ImportBatchWizardItemRow';
+import { useDialogSync } from '@/shared/lib/hooks/useDialogSync';
 
 type ConfidenceFilter = 'all' | 'high' | 'medium' | 'low' | 'no_match' | 'errors';
 type SortMode = 'review' | 'confidence_desc' | 'name';
@@ -51,6 +52,7 @@ type Props = {
   onCommit: () => Promise<void>;
   onCancel: () => Promise<void>;
   onClose: () => void;
+  onReviewRemaining?: () => void;
 };
 
 const FILTERS: ConfidenceFilter[] = ['all', 'high', 'medium', 'low', 'no_match', 'errors'];
@@ -113,8 +115,8 @@ function initiallySelectedItemIds(items: ImportItem[]): Set<string> {
     items
       .filter(
         (item) =>
-          item.status === 'awaiting_destination' &&
-          item.decision === 'pending' &&
+          ((item.status === 'awaiting_destination' && item.decision === 'pending') ||
+            (item.status === 'ready' && item.decision !== 'skip')) &&
           item.destinationSuggestions[0]?.confidenceTier === 'high',
       )
       .map((item) => item.id),
@@ -132,6 +134,7 @@ export function ImportBatchWizard({
   onChooseDestination,
   onChooseManualTarget,
   onClose,
+  onReviewRemaining,
   onCommit,
   onLoadSourcePreview,
   onOpenDestination,
@@ -144,13 +147,15 @@ export function ImportBatchWizard({
   const [filter, setFilter] = useState<ConfidenceFilter>('all');
   const [search, setSearch] = useState('');
   const [sort, setSort] = useState<SortMode>('review');
+  const [committing, setCommitting] = useState(false);
+  const commitInFlight = useRef(false);
   const selectedBatchId = useRef(batch.id);
   const hasSeededDefaultSelection = useRef(initiallySelectedItemIds(batch.items).size > 0);
   const [selected, setSelected] = useState<Set<string>>(() =>
     initiallySelectedItemIds(batch.items),
   );
   const listRef = useRef<HTMLDivElement>(null);
-  const processing = batch.status === 'draft' || batch.status === 'analyzing';
+  const processing = committing || batch.status === 'draft' || batch.status === 'analyzing';
   const terminal = ['done', 'cancelled'].includes(batch.status);
   const readyItems = batch.items.filter((item) => item.status === 'ready');
   const recoveryItems = batch.items.filter(needsMetadataRecovery);
@@ -232,6 +237,7 @@ export function ImportBatchWizard({
   }, [batch.id, batch.items]);
 
   useEffect(() => {
+    if (report) return;
     const handleShortcut = (event: KeyboardEvent) => {
       const target = event.target;
       if (
@@ -248,7 +254,7 @@ export function ImportBatchWizard({
     };
     window.addEventListener('keydown', handleShortcut);
     return () => window.removeEventListener('keydown', handleShortcut);
-  }, [visibleIds]);
+  }, [report, visibleIds]);
 
   const selectAllVisible = () => setSelected(new Set(visibleIds));
   const selectNone = () => setSelected(new Set());
@@ -278,6 +284,63 @@ export function ImportBatchWizard({
     }
     selectNone();
   };
+
+  const commit = async () => {
+    if (commitInFlight.current) return;
+    commitInFlight.current = true;
+    setCommitting(true);
+    try {
+      await onCommit();
+    } finally {
+      commitInFlight.current = false;
+      setCommitting(false);
+    }
+  };
+
+  if (report && report.batchId === batch.id) {
+    const incomplete = report.failed > 0 || report.collisions > 0 || report.metadataPending > 0;
+    const hasRemaining = batch.items.some(
+      (item) => !['done', 'skipped', 'cancelled'].includes(item.status),
+    );
+    return (
+      <ImportResultDialog onClose={onClose}>
+        <div className="modal-box max-w-lg bg-base-200">
+          <h2 id="import-result-title" className="text-lg font-bold">
+            {t(incomplete || hasRemaining ? 'result.partial' : 'result.success')}
+          </h2>
+          <div
+            className={`mt-4 flex items-start gap-3 text-sm ${incomplete ? 'text-warning' : 'text-base-content'}`}
+            role="status"
+          >
+            {!incomplete && (
+              <Check size={20} className="shrink-0 text-success" aria-hidden="true" />
+            )}
+            <p>
+              {t('result_summary', {
+                moved: report.moved,
+                reallocated: report.reallocated,
+                created: report.createdCanonicalFolders,
+                skipped: report.skipped,
+                collisions: report.collisions,
+                pending: report.metadataPending,
+                failed: report.failed,
+              })}
+            </p>
+          </div>
+          <div className="modal-action">
+            {hasRemaining && onReviewRemaining && (
+              <button type="button" className="btn btn-ghost" onClick={onReviewRemaining}>
+                {t('result.review_remaining')}
+              </button>
+            )}
+            <button type="button" className="btn btn-primary" onClick={onClose} autoFocus>
+              {t('common:actions.close')}
+            </button>
+          </div>
+        </div>
+      </ImportResultDialog>
+    );
+  }
 
   return (
     <dialog open className="modal modal-open" aria-labelledby="match-wizard-title">
@@ -309,7 +372,9 @@ export function ImportBatchWizard({
           <div className="grid min-h-72 flex-1 place-items-center">
             <div className="text-center">
               <span className="loading loading-spinner loading-lg text-primary" />
-              <p className="mt-3 text-sm text-base-content/70">{t('analyzing')}</p>
+              <p className="mt-3 text-sm text-base-content/70">
+                {t(committing ? 'importing' : 'analyzing')}
+              </p>
             </div>
           </div>
         ) : (
@@ -485,23 +550,6 @@ export function ImportBatchWizard({
                   </tbody>
                 </table>
               </div>
-
-              {report && (
-                <div className="alert mt-4 border border-success/20 bg-success/10 text-sm">
-                  <Check size={18} className="shrink-0 text-success" aria-hidden="true" />
-                  <span>
-                    {t('result_summary', {
-                      moved: report.moved,
-                      reallocated: report.reallocated,
-                      created: report.createdCanonicalFolders,
-                      skipped: report.skipped,
-                      collisions: report.collisions,
-                      pending: report.metadataPending,
-                      failed: report.failed,
-                    })}
-                  </span>
-                </div>
-              )}
             </div>
           </>
         )}
@@ -538,7 +586,7 @@ export function ImportBatchWizard({
                 type="button"
                 className="btn btn-primary"
                 disabled={processing || actionableItems.length === 0 || unresolvedItems.length > 0}
-                onClick={() => void onCommit()}
+                onClick={() => void commit()}
               >
                 {recoveryItems.length > 0
                   ? t('actions.resume')
@@ -548,6 +596,30 @@ export function ImportBatchWizard({
           </div>
         </footer>
       </div>
+    </dialog>
+  );
+}
+
+function ImportResultDialog({
+  children,
+  onClose,
+}: {
+  children: React.ReactNode;
+  onClose: () => void;
+}) {
+  const dialogRef = useRef<HTMLDialogElement>(null);
+  useDialogSync(dialogRef, true);
+  return (
+    <dialog
+      ref={dialogRef}
+      className="modal"
+      aria-labelledby="import-result-title"
+      onCancel={(event) => {
+        event.preventDefault();
+        onClose();
+      }}
+    >
+      {children}
     </dialog>
   );
 }
