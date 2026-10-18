@@ -63,6 +63,8 @@ export default tseslint.config(
       'target',
       'src-tauri',
       'coverage',
+      '.audit-output',
+      'landing/.astro',
       // Ignore specta generated bindings
       'src/shared/api/tauri/bindings.gen.ts',
       '.agent',

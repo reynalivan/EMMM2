@@ -70,4 +70,4 @@ jobs:
           tagName: ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           releaseName: EMMM ${{ github.event_name == 'workflow_dispatch' && inputs.release_tag || github.ref_name }}
           releaseDraft: true
-          includeUpdaterJson: true
+          uploadUpdaterJson: true
