@@ -10,10 +10,14 @@ jobs:
     runs-on: windows-latest
     env:
       SQLX_OFFLINE: 'true'
-      TEMP: ${{ runner.temp }}
-      TMP: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Use long Windows temporary path
+        shell: pwsh
+        run: |
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
 
       - uses: pnpm/action-setup@v5
 
@@ -79,11 +83,14 @@ jobs:
 
   e2e:
     runs-on: windows-latest
-    env:
-      TEMP: ${{ runner.temp }}
-      TMP: ${{ runner.temp }}
     steps:
       - uses: actions/checkout@v5
+
+      - name: Use long Windows temporary path
+        shell: pwsh
+        run: |
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
 
       - uses: pnpm/action-setup@v5
 
