@@ -1,0 +1,73 @@
+name: Native startup policy experiment
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  startup-policy-experiment:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Use long Windows temporary path
+        shell: pwsh
+        run: |
+          "TEMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+          "TMP=$env:RUNNER_TEMP" >> $env:GITHUB_ENV
+
+      - uses: pnpm/action-setup@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Prepare native dependencies
+        run: pnpm native:prepare
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          key: e2e
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install tauri-driver
+        run: cargo install tauri-driver --locked
+
+      - name: Validate experiment scope guards
+        run: node --test scripts/native-startup-policy-experiment.test.mjs
+
+      - name: Experiment with exact-app machine policy
+        shell: pwsh
+        run: ./scripts/native-startup-policy-experiment.ps1
+
+      - name: Collect private application log
+        if: always()
+        shell: pwsh
+        run: |
+          $source = Join-Path $env:LOCALAPPDATA 'com.reynalivan.emmm.e2e/logs'
+          if (Test-Path -LiteralPath $source) {
+            $target = Join-Path $env:GITHUB_WORKSPACE '.audit-output/native-startup-experiment/app-logs'
+            New-Item -ItemType Directory -Path $target -Force | Out-Null
+            Get-ChildItem -LiteralPath $source -File -Filter '*.log*' | ForEach-Object {
+              Copy-Item -LiteralPath $_.FullName -Destination $target
+            }
+          }
+
+      - name: Retain experiment evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-startup-policy-experiment
+          path: |
+            .audit-output/native-startup-experiment/
+            .audit-output/native-e2e/
+          if-no-files-found: warn
