@@ -1391,7 +1391,7 @@ fn decode_step_statuses(encoded: &str, count: usize) -> Result<Vec<StepStatus>, 
         ));
     }
     let mut packed = Vec::with_capacity(byte_count);
-    for chunk in encoded.as_bytes().chunks_exact(2) {
+    for chunk in encoded.as_bytes().as_chunks::<2>().0 {
         let hex = std::str::from_utf8(chunk).map_err(|_| {
             AppError::Validation("Mutation progress step status encoding is invalid".to_string())
         })?;

@@ -92,7 +92,7 @@ async fn workspace_view_model_falls_back_to_object_root_when_nested_grid_path_is
     assert_eq!(
         view_model.selection.affected_paths,
         vec![
-            format!("STALE_GRID/Deleted Variant"),
+            "STALE_GRID/Deleted Variant".to_string(),
             object_root
                 .join("Deleted Variant")
                 .to_string_lossy()

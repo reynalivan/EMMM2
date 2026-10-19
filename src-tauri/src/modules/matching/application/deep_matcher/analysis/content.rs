@@ -162,7 +162,7 @@ fn decode_utf16_le(bytes: &[u8]) -> Result<String, ScannerError> {
     }
 
     let mut result = String::new();
-    for chunk in bytes.chunks_exact(2) {
+    for chunk in bytes.as_chunks::<2>().0 {
         let word = u16::from_le_bytes([chunk[0], chunk[1]]);
         match char::from_u32(word as u32) {
             Some(c) => result.push(c),

@@ -326,7 +326,7 @@ fn validate_trusted_toggle_batch_scope(
         .mods_root_for(game_id)
         .ok_or_else(|| AppError::NotFound("Game mods path not found".to_string()))?;
     let mods_root = super::super::toggle_projection::projection_physical_path(&mods_root)?;
-    for pair in changed_paths.chunks_exact(2) {
+    for pair in changed_paths.as_chunks::<2>().0 {
         let old_path = super::super::toggle_projection::projection_physical_path(
             std::path::Path::new(&pair[0]),
         )?;

@@ -56,6 +56,12 @@ The 2026-10-20 DAL/DTO relocation was independently reviewed before renewing thi
 source digest. Archive readers, extraction entry points and updater features did
 not change; the existing review deadline remains unchanged.
 
+The subsequent Rust 1.99 lint compatibility change replaces three constant-size
+chunk iterators with array chunks and one test-only literal formatting call.
+Independent review confirmed the existing even-length guards and equivalent
+iteration semantics; archive/updater reachability and review deadlines did not
+change when renewing the source digest.
+
 References: [RustSec ignores](https://github.com/rustsec/rustsec/blob/main/cargo-audit/README.md#ignoring-advisories),
 [OpenVEX justifications](https://github.com/openvex/spec/blob/main/OPENVEX-SPEC.md#status-labels),
 [ZIP advisory](https://rustsec.org/advisories/RUSTSEC-2026-0368.html).
