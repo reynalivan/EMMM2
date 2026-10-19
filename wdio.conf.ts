@@ -147,6 +147,16 @@ export function createNativeE2EConfig(
         await assertDriverPortsAvailable([DRIVER_PORT, NATIVE_DRIVER_PORT]);
         console.info('Checking Microsoft Edge driver; missing matching driver may be downloaded.');
         const edgeDriverPath = await downloadEdgeDriver();
+        const driverVersion = spawnSync(edgeDriverPath, ['--version'], {
+          encoding: 'utf8',
+          windowsHide: true,
+        });
+        if (driverVersion.error || driverVersion.status !== 0) {
+          throw new Error('Microsoft Edge driver version check failed', {
+            cause: driverVersion.error ?? driverVersion.stderr,
+          });
+        }
+        console.info(`Native driver: ${driverVersion.stdout.trim()}`);
 
         tauriDriver = spawn(
           'tauri-driver',

@@ -147,7 +147,10 @@ jobs:
             $runtime = Get-WebViewRuntimeVersion
           }
           if (-not $runtime) { throw 'WebView2 Runtime is unavailable after setup' }
-          Write-Output "WebView2 Runtime: $runtime; Windows session: $([Diagnostics.Process]::GetCurrentProcess().SessionId)"
+          $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+          $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+          $elevated = $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+          Write-Output "WebView2 Runtime: $runtime; Windows session: $([Diagnostics.Process]::GetCurrentProcess().SessionId); elevated: $elevated"
 
       - name: Native startup gate
         run: pnpm test:e2e --spec tests/e2e/specs/app-bootstrap.e2e.ts
@@ -158,13 +161,27 @@ jobs:
       - name: Run E2E suite
         run: pnpm test:e2e
 
+      - name: Collect isolated native startup evidence
+        if: always()
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $destination = Join-Path $env:GITHUB_WORKSPACE '.audit-output/native-e2e/app-logs'
+          foreach ($location in @(@{ Name = 'local'; Root = $env:LOCALAPPDATA }, @{ Name = 'roaming'; Root = $env:APPDATA })) {
+            $source = Join-Path $location.Root 'com.reynalivan.emmm.e2e/logs'
+            if (Test-Path -LiteralPath $source) {
+              $target = Join-Path $destination $location.Name
+              New-Item -ItemType Directory -Path $target -Force | Out-Null
+              Get-ChildItem -LiteralPath $source -File -Filter '*.log*' | ForEach-Object {
+                Copy-Item -LiteralPath $_.FullName -Destination $target
+              }
+            }
+          }
+
       - name: Preserve isolated native startup evidence
         if: always()
         uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
         with:
           name: native-e2e-evidence
-          path: |
-            .audit-output/native-e2e/
-            ~/AppData/Local/com.reynalivan.emmm.e2e/logs/
-            ~/AppData/Roaming/com.reynalivan.emmm.e2e/logs/
+          path: .audit-output/native-e2e/
           if-no-files-found: warn
