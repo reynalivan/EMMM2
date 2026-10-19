@@ -3,6 +3,19 @@ use sqlx::SqlitePool;
 use crate::modules::games::domain::models::ItemStatus;
 use crate::shared::path_key::{canonical_name_key, folder_path_key};
 
+pub(crate) async fn clear_catalog_thumbnail_references(
+    pool: &SqlitePool,
+) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        "UPDATE objects
+         SET thumbnail_path = NULL, thumbnail_source = NULL
+         WHERE thumbnail_source = 'asset_pack'",
+    )
+    .execute(pool)
+    .await?;
+    Ok(())
+}
+
 #[allow(clippy::too_many_arguments)] // Repository insert keeps DB columns explicit at call sites.
 pub async fn create_object(
     pool: &SqlitePool,

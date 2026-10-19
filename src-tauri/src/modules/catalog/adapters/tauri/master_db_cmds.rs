@@ -3,52 +3,8 @@ use crate::shared::errors::AppError;
 use tauri::Manager;
 
 #[cfg(test)]
-mod catalog_refresh_tests {
-    use super::refresh_catalog_metadata;
-    use crate::modules::workspace::application::scanner::master_db::{
-        asset_pack::CatalogPack,
-        test_support::{catalog_pool, write_catalog},
-    };
-
-    #[tokio::test]
-    async fn invalid_pack_does_not_clear_thumbnail_references() {
-        let root = tempfile::tempdir().unwrap();
-        let pool = catalog_pool().await;
-        write_catalog(&CatalogPack::root(root.path()), "fixture");
-        std::fs::write(
-            CatalogPack::root(root.path()).join("catalog/gimi.json"),
-            b"corrupted",
-        )
-        .unwrap();
-        assert!(refresh_catalog_metadata(root.path(), &pool).await.is_err());
-        let paths: Vec<String> =
-            sqlx::query_scalar("SELECT thumbnail_path FROM objects ORDER BY id")
-                .fetch_all(&pool)
-                .await
-                .unwrap();
-        assert_eq!(paths, ["old-catalog.png", "user.png"]);
-    }
-
-    #[tokio::test]
-    async fn valid_refresh_clears_only_catalog_owned_references() {
-        let root = tempfile::tempdir().unwrap();
-        let pool = catalog_pool().await;
-        write_catalog(&CatalogPack::root(root.path()), "fixture");
-        assert_eq!(
-            refresh_catalog_metadata(root.path(), &pool)
-                .await
-                .unwrap()
-                .entries,
-            1
-        );
-        let paths: Vec<Option<String>> =
-            sqlx::query_scalar("SELECT thumbnail_path FROM objects ORDER BY id")
-                .fetch_all(&pool)
-                .await
-                .unwrap();
-        assert_eq!(paths, [None, Some("user.png".to_string())]);
-    }
-}
+#[path = "master_db_cmds/tests.rs"]
+mod catalog_refresh_tests;
 
 /// The bundled-resources directory, or a typed error.
 ///
@@ -175,13 +131,8 @@ async fn refresh_catalog_metadata(
             app_data_dir,
         )?
         .review()?;
-    sqlx::query(
-        "UPDATE objects
-         SET thumbnail_path = NULL, thumbnail_source = NULL
-         WHERE thumbnail_source = 'asset_pack'",
-    )
-    .execute(pool)
-    .await?;
+    crate::modules::catalog::adapters::sqlite::object::clear_catalog_thumbnail_references(pool)
+        .await?;
     Ok(
         crate::modules::workspace::application::scanner::master_db::CatalogPackRefreshResult {
             state: "ready".to_string(),

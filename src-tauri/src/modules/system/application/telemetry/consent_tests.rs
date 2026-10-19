@@ -1,5 +1,5 @@
 use super::*;
-use crate::modules::settings::adapters::tauri::settings_cmds::persist_telemetry_consent;
+use crate::modules::settings::api::persist_telemetry_consent;
 use crate::modules::settings::application::config::ConfigService;
 
 fn event() -> TelemetryEvent {

@@ -22,11 +22,7 @@ fn emit_game_activation_status(
 const AI_CONNECTION_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_AI_BASE_URL: &str = "https://api.openai.com/v1";
 
-#[derive(Debug, Clone, serde::Serialize, specta::Type)]
-pub struct SaveSettingsResult {
-    pub settings: AppSettings,
-    pub sync_warning: Option<crate::modules::reconciliation::application::disk_reconcile::types::CommittedMutationSyncWarning>,
-}
+use crate::modules::settings::api::SaveSettingsResult;
 
 fn completed_settings_save(
     settings: AppSettings,

@@ -12,6 +12,15 @@ pub struct TestContext {
     pub pool: Pool<Sqlite>,
 }
 
+impl TestContext {
+    pub async fn mod_count(&self, game_id: &str) -> Result<i64, sqlx::Error> {
+        sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE game_id = ?")
+            .bind(game_id)
+            .fetch_one(&self.pool)
+            .await
+    }
+}
+
 pub struct TestGameFixture<'a> {
     pub id: &'a str,
     pub name: &'a str,

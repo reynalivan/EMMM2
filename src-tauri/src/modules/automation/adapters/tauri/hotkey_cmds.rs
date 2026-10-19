@@ -22,8 +22,7 @@ pub async fn save_hotkey_configuration(
     config_state: State<'_, ConfigService>,
     hotkey_manager: State<'_, HotkeyManager>,
     pool: State<'_, sqlx::SqlitePool>,
-) -> Result<crate::modules::settings::adapters::tauri::settings_cmds::SaveSettingsResult, AppError>
-{
+) -> Result<crate::modules::settings::api::SaveSettingsResult, AppError> {
     let mut sink = TauriShortcutRegistrationSink::new(&app);
     let saved = commit_hotkey_configuration_with_sink(
         expected_revision,
@@ -68,12 +67,10 @@ pub async fn save_hotkey_configuration(
         }
     }
 
-    Ok(
-        crate::modules::settings::adapters::tauri::settings_cmds::SaveSettingsResult {
-            settings: saved,
-            sync_warning,
-        },
-    )
+    Ok(crate::modules::settings::api::SaveSettingsResult {
+        settings: saved,
+        sync_warning,
+    })
 }
 
 pub(crate) fn commit_hotkey_configuration_with_sink(

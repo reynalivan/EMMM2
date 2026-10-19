@@ -52,6 +52,10 @@ change requires a renewed reachability review, including new callers or aliases
 that a text search for `.extract()` could miss. Do not automatically regenerate
 the digest in CI. Remove these exceptions after a compatible upstream fix.
 
+The 2026-10-20 DAL/DTO relocation was independently reviewed before renewing this
+source digest. Archive readers, extraction entry points and updater features did
+not change; the existing review deadline remains unchanged.
+
 References: [RustSec ignores](https://github.com/rustsec/rustsec/blob/main/cargo-audit/README.md#ignoring-advisories),
 [OpenVEX justifications](https://github.com/openvex/spec/blob/main/OPENVEX-SPEC.md#status-labels),
 [ZIP advisory](https://rustsec.org/advisories/RUSTSEC-2026-0368.html).

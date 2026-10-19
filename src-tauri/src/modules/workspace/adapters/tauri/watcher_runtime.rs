@@ -2257,11 +2257,7 @@ mod tests {
         assert!(result.status.applied());
         assert!(result.reconcile_revision > baseline.reconcile_revision);
         assert!(watcher.suppressor.pending_repair(&session).is_none());
-        let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE game_id = ?")
-            .bind("game")
-            .fetch_one(&db.pool)
-            .await
-            .expect("projected mods");
+        let count = db.mod_count("game").await.expect("projected mods");
         assert_eq!(count, 1);
         assert!(matches!(
             state.authority_catch_up("game", &root, session.generation()),
@@ -2620,9 +2616,8 @@ mod tests {
                 &result,
                 &paths,
             ));
-            let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE game_id = ?")
-                .bind("game")
-                .fetch_one(&db.pool)
+            let count = db
+                .mod_count("game")
                 .await
                 .expect("ordinary projection rows");
             assert_eq!(count, 1);
@@ -3330,11 +3325,7 @@ mod tests {
             &projected,
             &paths
         ));
-        let mod_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM mods WHERE game_id = ?")
-            .bind("game")
-            .fetch_one(&db.pool)
-            .await
-            .expect("projected mods");
+        let mod_count = db.mod_count("game").await.expect("projected mods");
         assert_eq!(
             mod_count, 1,
             "native observation reaches disk projection after old activation retirement"
