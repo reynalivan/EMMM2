@@ -63,6 +63,7 @@ export function createNativeE2EConfig(
     hostname: '127.0.0.1',
     port: DRIVER_PORT,
     logLevel: 'warn',
+    outputDir: path.resolve(__dirname, '.audit-output/native-e2e'),
     specs: ['./tests/e2e/specs/**/*.e2e.ts'],
     maxInstances: 1,
     capabilities: [

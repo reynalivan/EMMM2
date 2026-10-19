@@ -120,8 +120,51 @@ jobs:
       - name: Install tauri-driver
         run: cargo install tauri-driver --locked
 
+      - name: Ensure WebView2 Runtime for native startup
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          function Get-WebViewRuntimeVersion {
+            $client = '{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}'
+            foreach ($key in @("HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\$client", "HKCU:\Software\Microsoft\EdgeUpdate\Clients\$client")) {
+              if (Test-Path -LiteralPath $key) {
+                $value = (Get-ItemProperty -LiteralPath $key).pv
+                $parsed = $null
+                if ([version]::TryParse($value, [ref]$parsed) -and $parsed -gt [version]'0.0.0.0') { return $parsed }
+              }
+            }
+          }
+          $runtime = Get-WebViewRuntimeVersion
+          if (-not $runtime) {
+            $bootstrapper = Join-Path $env:RUNNER_TEMP 'MicrosoftEdgeWebview2Setup.exe'
+            Invoke-WebRequest -Uri 'https://go.microsoft.com/fwlink/p/?LinkId=2124703' -OutFile $bootstrapper
+            $signature = Get-AuthenticodeSignature -LiteralPath $bootstrapper
+            if ($signature.Status -ne 'Valid' -or $signature.SignerCertificate.Subject -notmatch 'CN=Microsoft Corporation(,|$)') {
+              throw 'WebView2 bootstrapper does not have a valid Microsoft publisher signature'
+            }
+            $installed = Start-Process -FilePath $bootstrapper -ArgumentList '/silent', '/install' -Wait -PassThru -WindowStyle Hidden
+            if ($installed.ExitCode -ne 0) { throw "WebView2 installer failed: $($installed.ExitCode)" }
+            $runtime = Get-WebViewRuntimeVersion
+          }
+          if (-not $runtime) { throw 'WebView2 Runtime is unavailable after setup' }
+          Write-Output "WebView2 Runtime: $runtime; Windows session: $([Diagnostics.Process]::GetCurrentProcess().SessionId)"
+
+      - name: Native startup gate
+        run: pnpm test:e2e --spec tests/e2e/specs/app-bootstrap.e2e.ts
+
       # wdio.conf.ts `onPrepare` builds the app itself, with the E2E identifier
       # override that gives the run its own app_data. Pre-building here would
       # only produce a binary it discards.
       - name: Run E2E suite
         run: pnpm test:e2e
+
+      - name: Preserve isolated native startup evidence
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: native-e2e-evidence
+          path: |
+            .audit-output/native-e2e/
+            ~/AppData/Local/com.reynalivan.emmm.e2e/logs/
+            ~/AppData/Roaming/com.reynalivan.emmm.e2e/logs/
+          if-no-files-found: warn
